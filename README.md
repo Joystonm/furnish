@@ -129,6 +129,14 @@ test, re-run, and not a different test that happened to pass. The failing
 pack's `failure.yaml` names the defect and marks it triaged; the passing
 pack's `failure.yaml` is empty.
 
+Both packs still pass `kane-cli evidence validate` (L1, finalized). One
+account identifier — the email address of the account that ran the tests — has
+been redacted from inside them; the verdict, the definition hash and every
+screenshot are as the agent produced them. A third attempt died on a platform
+error, the screenshot capture timing out, so its pack does not validate and it
+is not in the repository; it cost 1.19 credits and found nothing about the
+product.
+
 ### 6. The ledger, in the product
 
 Both runs are in the app, on the **Ledger** tab, above the plan and beside
