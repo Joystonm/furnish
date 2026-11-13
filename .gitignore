@@ -1,6 +1,5 @@
 node_modules
 dist
-.testmuai
 output-*
 *.local
 .DS_Store
@@ -8,5 +7,20 @@ output-*
 # Screenshots taken while working, not part of the app.
 shots/
 
-# Kane's working folders — the designed flows are committed, the scratch is not.
+# Kane's working folders — the designed test, the run results and the sealed
+# evidence pack are the proof of the closed loop, so they are committed. The
+# transient staging around them is not.
+.testmuai/*
+!.testmuai/context.md
+!.testmuai/tests
+!.testmuai/evidence
+.testmuai/tests/*
+!.testmuai/tests/*_test.md
+!.testmuai/tests/output-*
+.testmuai/tests/output-*/*
+!.testmuai/tests/output-*/Result.md
+.testmuai/evidence/*
+!.testmuai/evidence/*.evidence
+
+# Kane's own run folders — the scratch is not part of the app.
 kane-runs/

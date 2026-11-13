@@ -119,12 +119,20 @@ function doorGlyph(door: Door, plan: Plan) {
   };
 }
 
-function StairGlyph({ stair }: { stair: Stair }) {
+/**
+ * The flight, drawn where it actually is.
+ *
+ * On the storey the flight starts from it is a flight: treads and a line
+ * showing which way you go. On the storey it arrives at, it is an opening —
+ * the floor is not there, and the drawing has to say so.
+ */
+function StairGlyph({ stair, mode }: { stair: Stair; mode: 'up' | 'void' }) {
+  const top = stair.y + stair.flightOffset;
   const treads = 9;
   const lines = [];
   for (let i = 1; i < treads; i++) {
     const t = i / treads;
-    const y = stair.direction === 1 ? stair.y + stair.run * t : stair.y + stair.run * (1 - t);
+    const y = stair.direction === 1 ? top + stair.flightRun * t : top + stair.flightRun * (1 - t);
     lines.push(
       <line
         key={i}
@@ -138,15 +146,33 @@ function StairGlyph({ stair }: { stair: Stair }) {
     );
   }
   const midX = stair.x + stair.width / 2;
-  const fromY = stair.direction === 1 ? stair.y + stair.run * 0.25 : stair.y + stair.run * 0.75;
-  const toY = stair.direction === 1 ? stair.y + stair.run * 0.75 : stair.y + stair.run * 0.25;
+  const fromY = stair.direction === 1 ? top + stair.flightRun * 0.25 : top + stair.flightRun * 0.75;
+  const toY = stair.direction === 1 ? top + stair.flightRun * 0.75 : top + stair.flightRun * 0.25;
+
+  if (mode === 'void') {
+    return (
+      <g data-testid="plan-stair-void" data-stair-id={stair.id}>
+        <rect
+          x={stair.x}
+          y={top}
+          width={stair.width}
+          height={stair.flightRun}
+          fill="#e2e8f0"
+          stroke="#64748b"
+          strokeWidth={0.08}
+          strokeDasharray="0.2 0.16"
+        />
+      </g>
+    );
+  }
+
   return (
     <g data-testid="plan-stair" data-stair-id={stair.id} data-risers={stair.risers}>
       <rect
         x={stair.x}
-        y={stair.y}
+        y={top}
         width={stair.width}
-        height={stair.run}
+        height={stair.flightRun}
         fill="#f1f5f9"
         stroke="#64748b"
         strokeWidth={0.08}
@@ -167,9 +193,9 @@ function StairGlyph({ stair }: { stair: Stair }) {
 
 export function PlanView({ plan, floor, flagged, selected, onSelect }: Props) {
   const { plotWidth, plotDepth } = plan.brief;
-  const rooms = plan.rooms.filter((r) => r.floor === floor);
+  const rooms = plan.rooms.filter((r) => r.floor === floor || r.spans?.includes(floor) === true);
   const doors = plan.doors.filter((d) => d.floor === floor);
-  const stairs = plan.stairs.filter((s) => s.floor === floor);
+  const stairs = plan.stairs.filter((s) => s.floor === floor || s.toFloor === floor);
   const furniture = plan.furniture.filter((f) => f.floor === floor);
   const segments = walls(rooms);
 
@@ -333,7 +359,11 @@ export function PlanView({ plan, floor, flagged, selected, onSelect }: Props) {
 
         {/* the stairs */}
         {stairs.map((stair) => (
-          <StairGlyph key={stair.id} stair={stair} />
+          <StairGlyph
+            key={`${stair.id}-${stair.floor === floor ? 'up' : 'void'}`}
+            stair={stair}
+            mode={stair.floor === floor ? 'up' : 'void'}
+          />
         ))}
 
         {/* the furniture */}

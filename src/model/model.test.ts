@@ -113,7 +113,10 @@ describe('the brief', () => {
     const rooms = roomsOf('a three-bedroom house over two floors');
     expect(rooms.filter((r) => r.kind === 'bedroom')).toHaveLength(3);
     expect(rooms.filter((r) => r.kind === 'bathroom')).toHaveLength(2);
-    expect(rooms.filter((r) => r.kind === 'hall')).toHaveLength(1);
+    // A hall downstairs and a landing upstairs: every storey needs a way
+    // along it, or the rooms above can only be reached through one another.
+    expect(rooms.filter((r) => r.kind === 'hall')).toHaveLength(2);
+    expect(rooms.filter((r) => r.kind === 'hall').every((r) => r.area >= MINIMUM_AREA[r.kind])).toBe(true);
     expect(rooms.every((r) => r.area >= MINIMUM_AREA[r.kind])).toBe(true);
   });
 
@@ -168,20 +171,24 @@ describe('the generator', () => {
 
     // One envelope holds every room on every storey, so the building stands
     // on the same footprint on the ground floor as it does upstairs.
-    const usable = { x: SETBACK, y: SETBACK, width: 18 - 2 * SETBACK, depth: 14 - 2 * SETBACK };
-    const need = Math.max(
-      ...[0, 1].map((floor) =>
-        rooms.filter((r) => r.floor === floor).reduce((sum, r) => sum + r.area, 0),
-      ),
-    );
-    const envelope = envelopeFor(usable, need);
+    const boxOf = (floor: number) => {
+      const on = result.plan.rooms.filter(
+        (r) => r.floor === floor || r.spans?.includes(floor) === true,
+      );
+      return {
+        left: Math.min(...on.map((r) => r.x)),
+        top: Math.min(...on.map((r) => r.y)),
+        right: Math.max(...on.map((r) => r.x + r.width)),
+        bottom: Math.max(...on.map((r) => r.y + r.depth)),
+      };
+    };
 
-    for (const room of result.plan.rooms) {
-      expect(room.x).toBeGreaterThanOrEqual(envelope.x - 0.05);
-      expect(room.y).toBeGreaterThanOrEqual(envelope.y - 0.05);
-      expect(room.x + room.width).toBeLessThanOrEqual(envelope.x + envelope.width + 0.05);
-      expect(room.y + room.depth).toBeLessThanOrEqual(envelope.y + envelope.depth + 0.05);
-    }
+    const ground = boxOf(0);
+    const upper = boxOf(1);
+    expect(upper.left).toBeCloseTo(ground.left, 3);
+    expect(upper.top).toBeCloseTo(ground.top, 3);
+    expect(upper.right).toBeCloseTo(ground.right, 3);
+    expect(upper.bottom).toBeCloseTo(ground.bottom, 3);
   });
 
   it('keeps the footprint inside the plot and centred in the usable ground', () => {
@@ -278,10 +285,26 @@ describe('the checker', () => {
   });
 
   it('says when the staircase is walled off', () => {
+    const base = handPlan();
     const plan = handPlan({
       brief: brief({ storeys: 2 }),
+      // The door between the two rooms is not on the stair's own wall, so
+      // the flight has no way in.
+      doors: [{ ...base.doors[0], y: 4 }],
       stairs: [
-        { id: 's1', floor: 0, toFloor: 1, x: 6, y: 0, width: 1.1, run: 3, direction: -1, risers: 17 },
+        {
+          id: 's1',
+          floor: 0,
+          toFloor: 1,
+          x: 6,
+          y: 0,
+          width: 1.1,
+          run: 3,
+          flightOffset: 0,
+          flightRun: 3,
+          direction: -1,
+          risers: 17,
+        },
       ],
     });
     expect(codes(plan)).toContain('stair-without-door');
@@ -305,6 +328,68 @@ describe('the checker', () => {
   it('walks from the front door through the doors', () => {
     const plan = handPlan();
     expect([...reachableRooms(plan)].sort()).toEqual(['bedroom-1', 'living-room']);
+  });
+});
+
+describe('the doors', () => {
+  const plan = (() => {
+    const result = generatePlan(brief({ rooms: roomsOf('a three-bedroom house on two floors') }));
+    if (!result.ok) throw new Error('the plan should fit');
+    return result.plan;
+  })();
+
+  const interior = plan.doors.filter((d) => d.joins.every((j) => j !== null));
+
+  it('gives every room a way in', () => {
+    for (const room of plan.rooms) {
+      const ways = interior.filter((d) => d.joins.includes(room.id)).length;
+      expect(`${room.label}:${ways}`).not.toBe(`${room.label}:0`);
+    }
+  });
+
+  it('never opens one bathroom into another', () => {
+    for (const door of interior) {
+      const kinds = door.joins.map((id) => plan.rooms.find((r) => r.id === id)?.kind);
+      expect(kinds.filter((k) => k === 'bathroom').length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('never opens a bedroom through a bathroom', () => {
+    for (const door of interior) {
+      const kinds = door.joins.map((id) => plan.rooms.find((r) => r.id === id)?.kind);
+      const both = kinds.includes('bathroom') && kinds.includes('bedroom');
+      expect(both).toBe(false);
+    }
+  });
+
+  it('never makes a room the way through to another', () => {
+    // The doors form a tree: one door fewer than there are rooms, so there is
+    // no loop to walk round and no room that has to be walked through.
+    const floors = new Set(plan.rooms.map((r) => r.floor));
+    for (const floor of floors) {
+      const rooms = plan.rooms.filter((r) => r.floor === floor || r.spans?.includes(floor) === true);
+      const doors = interior.filter((d) => d.floor === floor);
+      expect(doors.length).toBe(rooms.length - 1);
+    }
+  });
+
+  it('puts a piece of furniture in every room', () => {
+    for (const room of plan.rooms) {
+      if (room.kind === 'hall') continue;
+      const pieces = plan.furniture.filter((f) => f.roomId === room.id);
+      expect(`${room.label}:${pieces.length}`).toBe(`${room.label}:1`);
+    }
+  });
+});
+
+describe('the plan the generator draws', () => {
+  it('has nothing wrong with it', () => {
+    const result = generatePlan(brief({ rooms: roomsOf('a three-bedroom house on two floors') }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const summary = checkPlan(result.plan);
+    expect(`${summary.errors} errors, ${summary.warnings} warnings`).toBe('0 errors, 0 warnings');
+    expect(summary.reachable).toBe(summary.total);
   });
 });
 

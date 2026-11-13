@@ -116,8 +116,14 @@ export function programFromBrief(brief: Brief): BriefRoom[] {
     rooms.push(makeRoom(`Bathroom ${i + 1}`, 'bathroom', 5, upper));
   }
 
-  // A hall is circulation, and circulation is what makes a plan walkable.
+  // Circulation is what makes a plan walkable, and every storey needs it: a
+  // hall on the ground floor, a landing on each floor above. Without a
+  // landing upstairs, the bedrooms are rooms you can only reach through one
+  // another.
   rooms.push(makeRoom('Hall', 'hall', 7, ground));
+  for (let floor = 1; floor < storeys; floor++) {
+    rooms.push(makeRoom(`Landing ${floor}`, 'hall', 6, floor));
+  }
 
   return rooms;
 }

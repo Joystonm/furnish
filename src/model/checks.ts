@@ -12,7 +12,8 @@
 
 import type { Door, Furniture, Plan, Rect, Room } from './types';
 import { EPS, overlapArea, sharedEdge } from './geometry';
-import { DOOR_APPROACH, DOOR_WIDTH, STAIR_WIDTH } from './generator';
+import { DOOR_WIDTH, STAIR_WIDTH } from './constants';
+import { zoneOnSide } from './zones';
 import { MINIMUM_AREA } from './program';
 
 export type IssueCode =
@@ -71,35 +72,27 @@ function roomById(plan: Plan, id: string | null): Room | undefined {
  * of it is the part that gets blocked, so it is the part that is measured:
  * a rectangle on the room's side of the wall, one door-width wide and one
  * door-width deep.
+ *
+ * This is the zone on the first side the door joins. An interior door has
+ * two — you stand in front of it in whichever room you are coming from — and
+ * both are measured by {@link doorZones}.
  */
 export function doorZone(door: Door, plan: Plan): Rect | null {
-  const half = door.width / 2;
-  const near = roomById(plan, door.joins[0]);
-  const far = roomById(plan, door.joins[1]);
+  const first = roomById(plan, door.joins[0]) ?? roomById(plan, door.joins[1]);
+  if (!first) return null;
+  return zoneOnSide(door, first);
+}
 
-  if (door.axis === 'vertical') {
-    if (!near) return null;
-    const towardsEast = near.x + near.width / 2 >= door.x;
-    return {
-      x: towardsEast ? door.x : door.x - DOOR_APPROACH,
-      y: door.y - half,
-      width: DOOR_APPROACH,
-      depth: door.width,
-    };
+/** Every side of a door that opens onto a room, and the floor in front of it. */
+export function doorZones(door: Door, plan: Plan): Rect[] {
+  const zones: Rect[] = [];
+  for (const id of door.joins) {
+    const room = roomById(plan, id);
+    if (!room) continue;
+    const zone = zoneOnSide(door, room);
+    if (zone) zones.push(zone);
   }
-
-  if (!far && near) {
-    // The front door: the space in front of it is the path, not the room.
-    return null;
-  }
-  if (!far) return null;
-  const towardsSouth = far.y + far.depth / 2 >= door.y;
-  return {
-    x: door.x - half,
-    y: towardsSouth ? door.y : door.y - DOOR_APPROACH,
-    width: door.width,
-    depth: DOOR_APPROACH,
-  };
+  return zones;
 }
 
 /** The rooms a door joins, ignoring the ones that lead outside. */
@@ -136,11 +129,23 @@ export function reachableRooms(plan: Plan): Set<string> {
   return reached;
 }
 
-/** The rooms a flight of stairs touches. */
-function roomsAtStair(plan: Plan, stair: { x: number; y: number; width: number; run: number; floor: number }): Room[] {
+/**
+ * The rooms a stairwell touches.
+ *
+ * A stairwell is a space you stand in, so the rooms that matter are the
+ * ones that open onto it — the corridor beside it — and the stairwell itself.
+ * A room that shares the stairwell's wall is in, whether or not it happens
+ * to overlap it.
+ */
+function roomsAtStair(
+  plan: Plan,
+  stair: { x: number; y: number; width: number; run: number; floor: number },
+): Room[] {
   const rect: Rect = { x: stair.x, y: stair.y, width: stair.width, depth: stair.run };
   return plan.rooms.filter(
-    (r) => r.floor === stair.floor && overlapArea(r, rect) > 0.01 && sharedEdge(r, rect, 0.2) !== null,
+    (r) =>
+      (r.floor === stair.floor || r.spans?.includes(stair.floor) === true) &&
+      (overlapArea(r, rect) > 0.01 || sharedEdge(r, rect, 0.2) !== null),
   );
 }
 
@@ -348,18 +353,19 @@ export function checkPlan(plan: Plan): CheckSummary {
     if (!room) continue;
     for (const door of plan.doors) {
       if (door.floor !== item.floor) continue;
-      const zone = doorZone(door, plan);
-      if (!zone) continue;
-      if (overlapArea(item, zone) <= 0.01) continue;
-      issues.push({
-        code: 'furniture-in-doorway',
-        severity: 'error',
-        title: `The ${item.label.toLowerCase()} blocks a doorway`,
-        detail: `The ${item.label.toLowerCase()} in ${room.label} stands in the ${DOOR_WIDTH.toFixed(2)} m of floor in front of the door.`,
-        rooms: [room.id],
-        furniture: [item.id],
-        correction: correctionForFurniture(item, zone, room, door.axis),
-      });
+      if (!door.joins.includes(room.id)) continue;
+      for (const zone of doorZones(door, plan)) {
+        if (overlapArea(item, zone) <= 0.01) continue;
+        issues.push({
+          code: 'furniture-in-doorway',
+          severity: 'error',
+          title: `The ${item.label.toLowerCase()} blocks a doorway`,
+          detail: `The ${item.label.toLowerCase()} in ${room.label} stands in the ${DOOR_WIDTH.toFixed(2)} m of floor in front of the door.`,
+          rooms: [room.id],
+          furniture: [item.id],
+          correction: correctionForFurniture(item, zone, room, door.axis),
+        });
+      }
     }
   }
 

@@ -63,6 +63,15 @@ export interface Room extends Rect {
   label: string;
   kind: RoomKind;
   floor: number;
+  /**
+   * The storeys this space appears on.
+   *
+   * A stairwell runs through the house: it is one space, drawn on every storey
+   * it passes through. Without this the drawing and the walk would disagree —
+   * the drawing would show two rooms where there is one, and the room above
+   * would look unreachable from the room below.
+   */
+  spans?: number[];
   /** The area the brief asked for, so the drawing can show the difference. */
   requestedArea: number;
 }
@@ -90,12 +99,22 @@ export interface Stair {
   /** The storey the flight starts on. */
   floor: number;
   toFloor: number;
-  /** The plan rectangle the flight occupies. */
+  /**
+   * The stairwell in plan: the space the flight runs through.
+   *
+   * This is wider and deeper than the flight itself, because a stairwell is
+   * a room you stand in — you arrive in it, you turn in it, and you walk out
+   * of it through a door.
+   */
   x: number;
   y: number;
   width: number;
-  /** How far the flight runs, north–south. */
+  /** The depth of the stairwell, north–south. */
   run: number;
+  /** Where the flight sits inside the stairwell, measured from its north wall. */
+  flightOffset: number;
+  /** How far the flight itself runs. */
+  flightRun: number;
   /** +1 rises toward the south, -1 toward the north. */
   direction: 1 | -1;
   risers: number;

@@ -1,18 +1,29 @@
 /**
  * The generator: a brief becomes a plan.
  *
- * The generator is deliberately plain. It partitions the footprint into
- * rectangles in proportion to the areas the brief asked for, cuts a stair
- * well out of one corner, cuts a door into every wall two rooms share, and
- * puts one piece of furniture in each room.
+ * The generator is deliberately plain. It works out a footprint big enough for
+ * the program, keeps a stairwell and a corridor out of it, partitions what is
+ * left into rooms in proportion to the areas the brief asked for, cuts a door
+ * into each room's way in, and puts one piece of furniture in each room.
  *
  * It is plain on purpose, because what it produces is what the checker and
  * the agent then argue about. A clever generator would hide the very defects
  * the checker exists to find.
+ *
+ * The order matters, and it is the order the work happens in:
+ *
+ *   1. the footprint, sized so the program fits;
+ *   2. the stairwell and the corridor, taken out first so that no room is
+ *      ever left with a stairwell bitten out of it;
+ *   3. the rooms, partitioned into what is left;
+ *   4. the doors, one per room, grown as a tree from the corridor;
+ *   5. the furniture, placed last, because a piece of furniture is only
+ *      sensible once you know where the doorways are.
  */
 
 import type {
   Brief,
+  BriefRoom,
   Door,
   Furniture,
   GenerateResult,
@@ -23,22 +34,30 @@ import type {
   Stair,
 } from './types';
 import { hashSeed, mulberry32 } from './rng';
-import { mm, sharedEdge, subtract } from './geometry';
+import { EPS, mm, overlapArea, sharedEdge } from './geometry';
+import {
+  DOOR_WIDTH,
+  MIN_CIRCULATION_WIDTH,
+  RISER,
+  SETBACK,
+  STAIR_RUN,
+  STAIR_WIDTH,
+  STOREY_HEIGHT,
+} from './constants';
+import { zonesInRoom } from './zones';
 
-/** How far the building sits back from the plot boundary. */
-export const SETBACK = 1.5;
-/** Floor to floor, in metres. */
-export const STOREY_HEIGHT = 2.9;
-/** A clear opening. */
-export const DOOR_WIDTH = 0.9;
-/** How much floor a person needs to stand on to use a door. */
-export const DOOR_APPROACH = 0.9;
-/** The width of a flight. */
-export const STAIR_WIDTH = 1.1;
-/** The depth of the well the flight occupies in plan. */
-export const STAIR_RUN = 3.0;
-/** Riser height, in metres. */
-export const RISER = 0.175;
+export {
+  DOOR_APPROACH,
+  DOOR_WIDTH,
+  RISER,
+  SETBACK,
+  STAIR_RUN,
+  STAIR_WIDTH,
+  STOREY_HEIGHT,
+} from './constants';
+
+/** The id of the stairwell. It is one space on every storey it passes. */
+export const STAIR_ID = 'stair';
 
 interface Placement {
   room: Room;
@@ -84,7 +103,10 @@ function bestSplit(rooms: { area: number }[]): number {
  * The cut always goes across the longer side, so the pieces stay closer to
  * square than they would if the building were sliced into strips.
  */
-function partition(rect: Rect, rooms: { id: string; label: string; kind: RoomKind; area: number; floor: number }[]): Placement[] {
+function partition(
+  rect: Rect,
+  rooms: { id: string; label: string; kind: RoomKind; area: number; floor: number }[],
+): Placement[] {
   if (rooms.length === 0) return [];
   if (rooms.length === 1) {
     const only = rooms[0];
@@ -156,30 +178,196 @@ export function envelopeFor(usable: Rect, need: number): Rect {
   };
 }
 
-/** A door in every wall two rooms share, at the middle of the shared stretch. */
-function doorsBetween(rooms: Room[]): Door[] {
+/**
+ * The circulation room of a storey.
+ *
+ * Circulation is what makes a plan walkable, so every storey has one: a hall
+ * on the ground floor, a landing above it. If the program has lost its hall,
+ * one is put back — a house with no corridor is not a house, it is a set of
+ * boxes.
+ */
+export function circulationFor(brief: Brief, floor: number): BriefRoom {
+  const found = brief.rooms.find((r) => r.floor === floor && r.kind === 'hall');
+  if (found) return found;
+  return {
+    id: floor === 0 ? 'hall' : `landing-${floor}`,
+    label: floor === 0 ? 'Hall' : `Landing ${floor}`,
+    kind: 'hall',
+    area: 6,
+    floor,
+  };
+}
+
+/**
+ * Size the footprint.
+ *
+ * The rooms have to fit in what is left of the plot once the stairwell and
+ * the corridor have taken their share, so the footprint is worked out from
+ * the rooms rather than from the plot: the plot says how big the envelope may
+ * be, and the program says how big it has to be.
+ */
+function fitEnvelope(
+  usable: Rect,
+  roomsNeed: number,
+  circulationArea: number,
+): { envelope: Rect; corridor: number; area: number } {
+  const aspect = usable.width / usable.depth;
+  let area = roomsNeed * 1.04;
+  let corridor = MIN_CIRCULATION_WIDTH;
+
+  for (let i = 0; i < 12; i++) {
+    const depth = Math.sqrt(area / aspect);
+    corridor = Math.max(MIN_CIRCULATION_WIDTH, circulationArea / depth);
+    const next = roomsNeed * 1.04 + (STAIR_WIDTH + corridor) * depth;
+    if (Math.abs(next - area) < 0.01) {
+      area = next;
+      break;
+    }
+    area = next;
+  }
+
+  return { envelope: envelopeFor(usable, area), corridor, area };
+}
+
+/**
+ * One door per room, and the doors form a tree.
+ *
+ * A door is a hole in a wall, and a house with a door in every wall it shares
+ * is a house you walk through sideways: the bedroom through the other
+ * bedroom, the bathroom through the second bathroom, the kitchen through the
+ * dining room. Four doorways around a 5 m² bathroom is not a generous house —
+ * it is a bathroom with no floor left to stand on.
+ *
+ * So the doors are grown as a tree from the corridor. Every room hangs off
+ * exactly one doorway; the tree is walked breadth-first from the corridor, so
+ * the rooms nearest it open onto it; and a room is never joined to another
+ * room it has no business joining. The two bathrooms never open into one
+ * another, and a bedroom is only the way through to the next bedroom when
+ * there is nowhere else for it to open.
+ */
+
+/**
+ * How willing a room is to be the way in to another.
+ *
+ * A corridor is the way in to everything. A living room will take you into
+ * the dining room. A kitchen is a service room, and a bathroom is a dead end
+ * — you go through a bathroom on your way to nothing else.
+ */
+const WAY_IN: Record<RoomKind, number> = {
+  hall: 0,
+  living: 0,
+  dining: 0,
+  bedroom: 0,
+  study: 1,
+  kitchen: 2,
+  bathroom: 6,
+};
+
+function placeDoors(rooms: Room[]): Door[] {
   const doors: Door[] = [];
-  for (let i = 0; i < rooms.length; i++) {
-    for (let j = i + 1; j < rooms.length; j++) {
-      const a = rooms[i];
-      const b = rooms[j];
-      if (a.floor !== b.floor) continue;
-      const edge = sharedEdge(a, b, DOOR_WIDTH + 0.1);
+  const floors = [...new Set(rooms.map((r) => r.floor))].sort((a, b) => a - b);
+
+  for (const floor of floors) {
+    const onFloor = rooms.filter((r) => r.floor === floor && r.id !== STAIR_ID);
+    const root = onFloor.find((r) => r.kind === 'hall');
+    if (!root) continue;
+    const kindOf = (id: string) => rooms.find((r) => r.id === id)?.kind;
+
+    // Which rooms each room could open into.
+    const neighbours = new Map<string, string[]>();
+    for (const room of onFloor) neighbours.set(room.id, []);
+    for (let i = 0; i < onFloor.length; i++) {
+      for (let j = i + 1; j < onFloor.length; j++) {
+        const a = onFloor[i];
+        const b = onFloor[j];
+        if (!sharedEdge(a, b, DOOR_WIDTH + 0.1)) continue;
+        neighbours.get(a.id)!.push(b.id);
+        neighbours.get(b.id)!.push(a.id);
+      }
+    }
+    for (const list of neighbours.values()) list.sort();
+
+    // How far each room is from the corridor, counted in doors.
+    const distance = new Map<string, number>([[root.id, 0]]);
+    const queue = [root.id];
+    while (queue.length > 0) {
+      const here = queue.shift() as string;
+      for (const other of neighbours.get(here) ?? []) {
+        if (distance.has(other)) continue;
+        distance.set(other, (distance.get(here) as number) + 1);
+        queue.push(other);
+      }
+    }
+
+    // Each room's way in. The nearest neighbour wins, and between two
+    // neighbours the one that is more willing to be a way in wins: a dining
+    // room opens off the living room, not through the kitchen. A bathroom is
+    // only a way in when the room has no other neighbour to open onto.
+    const parent = new Map<string, string>();
+    const byDistance = onFloor
+      .filter((r) => r.id !== root.id && distance.has(r.id))
+      .sort(
+        (a, b) =>
+          (distance.get(a.id) as number) - (distance.get(b.id) as number) ||
+          a.id.localeCompare(b.id),
+      );
+
+    for (const room of byDistance) {
+      const options = neighbours.get(room.id) ?? [];
+      const withoutBathroom = options.filter((id) => kindOf(id) !== 'bathroom');
+      const pool = withoutBathroom.length > 0 ? withoutBathroom : options;
+      const ranked = pool.slice().sort((a, b) => {
+        const da = distance.get(a) as number;
+        const db = distance.get(b) as number;
+        if (da !== db) return da - db;
+        const wa = WAY_IN[kindOf(a) as RoomKind];
+        const wb = WAY_IN[kindOf(b) as RoomKind];
+        if (wa !== wb) return wa - wb;
+        return a.localeCompare(b);
+      });
+
+      for (const candidate of ranked) {
+        // The doors have to form a tree, so a room may not be reached through
+        // a room that is already reached through it.
+        let cursor: string | undefined = candidate;
+        const seen = new Set<string>();
+        let loops = false;
+        while (cursor !== undefined && !seen.has(cursor)) {
+          if (cursor === room.id) {
+            loops = true;
+            break;
+          }
+          seen.add(cursor);
+          cursor = parent.get(cursor);
+        }
+        if (loops) continue;
+        parent.set(room.id, candidate);
+        break;
+      }
+    }
+
+    for (const room of byDistance) {
+      const parentId = parent.get(room.id);
+      if (!parentId) continue;
+      const parentRoom = rooms.find((r) => r.id === parentId);
+      if (!parentRoom) continue;
+      const edge = sharedEdge(room, parentRoom, DOOR_WIDTH + 0.1);
       if (!edge) continue;
       const middle = (edge.from + edge.to) / 2;
       doors.push({
         id: `d${doors.length + 1}`,
-        floor: a.floor,
+        floor,
         kind: 'door',
         x: edge.axis === 'vertical' ? edge.at : middle,
         y: edge.axis === 'vertical' ? middle : edge.at,
         width: DOOR_WIDTH,
         axis: edge.axis,
         swing: 1,
-        joins: [a.id, b.id],
+        joins: [room.id, parentId],
       });
     }
   }
+
   return doors;
 }
 
@@ -209,33 +397,121 @@ function frontDoor(rooms: Room[], doors: Door[]): Door | null {
 }
 
 /**
- * One piece of furniture per room, set against the north wall.
+ * The door into the stairwell.
  *
- * The generator picks the wall without knowing where the doors are, because
- * that is the order the work happens in: the rooms are furnished first, and
- * the doors are cut afterwards.
+ * One door per storey. On the ground floor it is at the foot of the flight,
+ * so you walk in and straight on up. On the storeys above it is at the head
+ * of the flight, on the landing you arrive on, so you walk in and out into
+ * the corridor.
+ *
+ * It is in the west wall of the stairwell, which is the wall the corridor
+ * shares with it.
  */
-function furnish(rooms: Room[], random: () => number): Furniture[] {
+function stairDoor(
+  stairwell: Rect,
+  floor: number,
+  at: number,
+  id: string,
+): Door {
+  return {
+    id,
+    floor,
+    kind: 'door',
+    x: mm(stairwell.x),
+    y: mm(at),
+    width: DOOR_WIDTH,
+    axis: 'vertical',
+    swing: 1,
+    joins: [STAIR_ID, null],
+  };
+}
+
+/**
+ * One piece of furniture per room, set against a wall.
+ *
+ * The generator places the furniture **after** the doors, and keeps it clear
+ * of the floor in front of every doorway. A piece of furniture in front of a
+ * door is a defect, and a generator that cannot see its own doors will keep
+ * producing them.
+ */
+function furnish(rooms: Room[], doors: Door[], random: () => number): Furniture[] {
   const items: Furniture[] = [];
+
   for (const room of rooms) {
     const spec = FURNITURE[room.kind];
     if (!spec) continue;
     const width = Math.min(spec.width, room.width - 0.2);
     const depth = Math.min(spec.depth, room.depth - 0.2);
-    if (width <= 0 || depth <= 0) continue;
+    if (width <= 0.2 || depth <= 0.2) continue;
+
+    const zones = zonesInRoom(room, doors);
+    const spot = placeClear(room, width, depth, zones, random);
+    if (!spot) continue;
+
     items.push({
       id: `f${items.length + 1}`,
       label: spec.label,
       roomId: room.id,
       floor: room.floor,
-      x: mm(room.x + (room.width - width) / 2),
-      y: mm(room.y),
+      x: mm(spot.x),
+      y: mm(spot.y),
       width: mm(width),
       depth: mm(depth),
     });
   }
-  void random;
+
   return items;
+}
+
+/**
+ * Find somewhere for a piece of furniture that is against a wall of its room
+ * and clear of every doorway.
+ *
+ * The walls are tried in order — north, south, east, west — and along each
+ * wall the piece is set down at a free stretch of it.
+ */
+function placeClear(
+  room: Room,
+  width: number,
+  depth: number,
+  zones: Rect[],
+  random: () => number,
+): Rect | null {
+  if (width > room.width + EPS || depth > room.depth + EPS) return null;
+
+  const centredX = room.x + (room.width - width) / 2;
+  const centredY = room.y + (room.depth - depth) / 2;
+
+  const alongX = [centredX, room.x, room.x + room.width - width];
+  const alongY = [centredY, room.y, room.y + room.depth - depth];
+
+  const walls: { rect: Rect; axis: 'x' | 'y' }[] = [];
+  for (const x of alongX) {
+    walls.push({ rect: { x, y: room.y, width, depth }, axis: 'x' });
+  }
+  for (const x of alongX) {
+    walls.push({ rect: { x, y: room.y + room.depth - depth, width, depth }, axis: 'x' });
+  }
+  for (const y of alongY) {
+    walls.push({ rect: { x: room.x, y, width, depth }, axis: 'y' });
+  }
+  for (const y of alongY) {
+    walls.push({ rect: { x: room.x + room.width - width, y, width, depth }, axis: 'y' });
+  }
+
+  const clear = (rect: Rect) => !zones.some((zone) => overlapArea(rect, zone) > 0.01);
+
+  // North wall first, then south, then the two sides — the order a person
+  // would furnish a room in.
+  const order: number[] = [0, 1, 2, 3].map((wall) => wall * 3);
+  for (const start of order) {
+    const options = [0, 1, 2].map((offset) => walls[start + offset]).filter((w) => clear(w.rect));
+    if (options.length === 0) continue;
+    const pick = options[Math.floor(random() * options.length) % options.length];
+    return pick.rect;
+  }
+
+  return null;
 }
 
 /**
@@ -261,10 +537,18 @@ export function generatePlan(brief: Brief): GenerateResult {
 
   const usable: Rect = { x: SETBACK, y: SETBACK, width: usableWidth, depth: usableDepth };
   const capacity = usableWidth * usableDepth;
+  const storeys = Math.max(1, Math.min(4, brief.storeys));
 
-  for (let floor = 0; floor < brief.storeys; floor++) {
-    const onFloor = brief.rooms.filter((r) => r.floor === floor);
-    const need = sumAreas(onFloor);
+  const circulation: BriefRoom[] = [];
+  for (let floor = 0; floor < storeys; floor++) {
+    circulation.push(circulationFor(brief, floor));
+  }
+
+  const roomsOn = (floor: number) =>
+    brief.rooms.filter((r) => r.floor === floor && r.kind !== 'hall');
+
+  for (let floor = 0; floor < storeys; floor++) {
+    const need = sumAreas(brief.rooms.filter((r) => r.floor === floor));
     if (need > capacity) {
       return {
         ok: false,
@@ -277,63 +561,115 @@ export function generatePlan(brief: Brief): GenerateResult {
     }
   }
 
+  const roomsNeed = Math.max(...circulation.map((_, floor) => sumAreas(roomsOn(floor))), 1);
+  const circulationArea = Math.max(...circulation.map((c) => c.area), 1);
+  const { envelope, corridor: corridorWidth, area } = fitEnvelope(usable, roomsNeed, circulationArea);
+
+  if (area > capacity + EPS) {
+    return {
+      ok: false,
+      refusal: {
+        reason: 'The program does not fit the plot',
+        detail: `The program needs ${area.toFixed(1)} m² once the stairwell and the corridor are taken out, and the plot holds ${capacity.toFixed(1)} m² inside the ${SETBACK} m setback.`,
+        shortfall: area - capacity,
+      },
+    };
+  }
+
   const random = mulberry32(hashSeed(`${brief.text}|${JSON.stringify(brief.rooms)}`));
 
-  const floorNeeds: number[] = [];
-  for (let floor = 0; floor < brief.storeys; floor++) {
-    floorNeeds.push(sumAreas(brief.rooms.filter((r) => r.floor === floor)));
-  }
-  const envelope = envelopeFor(usable, Math.max(...floorNeeds, 1));
+  // The stairwell and the corridor are taken out of the footprint first, so
+  // that no room is ever left with a piece of the building bitten out of it.
+  const stairwell: Rect = {
+    x: envelope.x + envelope.width - STAIR_WIDTH,
+    y: envelope.y,
+    width: STAIR_WIDTH,
+    depth: envelope.depth,
+  };
+  const corridor: Rect = {
+    x: stairwell.x - corridorWidth,
+    y: envelope.y,
+    width: corridorWidth,
+    depth: envelope.depth,
+  };
+  const westArea: Rect = {
+    x: envelope.x,
+    y: envelope.y,
+    width: envelope.width - STAIR_WIDTH - corridorWidth,
+    depth: envelope.depth,
+  };
 
   const rooms: Room[] = [];
-  for (let floor = 0; floor < brief.storeys; floor++) {
-    const onFloor = brief.rooms
-      .filter((r) => r.floor === floor)
-      .sort((a, b) => b.area - a.area);
+  const stairs: Stair[] = [];
+
+  for (let floor = 0; floor < storeys; floor++) {
+    const circ = circulation[floor];
+    rooms.push({
+      id: circ.id,
+      label: circ.label,
+      kind: 'hall',
+      floor,
+      requestedArea: circ.area,
+      ...corridor,
+    });
+
+    const onFloor = roomsOn(floor).sort((a, b) => b.area - a.area);
     if (onFloor.length === 0) continue;
-    rooms.push(...partition(envelope, onFloor).map((p) => p.room));
+    rooms.push(...partition(westArea, onFloor).map((p) => p.room));
   }
 
-  // The stair well, in the south-east corner of the footprint. It is cut out
-  // of every storey it passes through.
-  const stairs: Stair[] = [];
-  if (brief.storeys > 1 && envelope.depth >= 2.4) {
-    const run = Math.min(STAIR_RUN, envelope.depth * 0.45);
-    const well: Rect = {
-      x: envelope.x + envelope.width - STAIR_WIDTH,
-      y: envelope.y + envelope.depth - run,
-      width: STAIR_WIDTH,
-      depth: run,
-    };
-    for (let floor = 0; floor < brief.storeys - 1; floor++) {
+  if (storeys > 1) {
+    // The stairwell is one space, on every storey it passes through.
+    rooms.push({
+      id: STAIR_ID,
+      label: 'Stairwell',
+      kind: 'hall',
+      floor: 0,
+      spans: Array.from({ length: storeys }, (_, i) => i),
+      requestedArea: stairwell.width * stairwell.depth,
+      ...stairwell,
+    });
+
+    // The flights stack from the south end of the stairwell upwards, so the
+    // last one lands on the landing at the north end.
+    const flightRun = Math.min(STAIR_RUN, (stairwell.depth - 1.2) / (storeys - 1));
+    for (let floor = 0; floor < storeys - 1; floor++) {
+      const flightY = stairwell.y + stairwell.depth - (floor + 1) * flightRun;
       stairs.push({
         id: `s${floor + 1}`,
         floor,
         toFloor: floor + 1,
-        x: mm(well.x),
-        y: mm(well.y),
+        x: mm(stairwell.x),
+        y: mm(stairwell.y),
         width: STAIR_WIDTH,
-        run: mm(run),
+        run: mm(stairwell.depth),
+        flightOffset: mm(flightY - stairwell.y),
+        flightRun: mm(flightRun),
         direction: -1,
         risers: Math.ceil(STOREY_HEIGHT / RISER),
       });
     }
-    for (const room of rooms) {
-      const trimmed = subtract(room, well);
-      room.x = mm(trimmed.x);
-      room.y = mm(trimmed.y);
-      room.width = mm(trimmed.width);
-      room.depth = mm(trimmed.depth);
-    }
-    // A room the well has eaten is not a room. It is left off the plan, and
-    // the checker says so rather than the plan pretending it is there.
-    for (let i = rooms.length - 1; i >= 0; i--) {
-      const room = rooms[i];
-      if (room.width < 0.5 || room.depth < 0.5) rooms.splice(i, 1);
+  }
+
+  const doors = placeDoors(rooms);
+
+  if (storeys > 1) {
+    const flightRun = Math.min(STAIR_RUN, (stairwell.depth - 1.2) / (storeys - 1));
+    // One door into the stairwell per storey. The ground floor door is at the
+    // foot of the flight, so you walk in and straight on up. Every storey
+    // above is at the head of the flight that arrives there, which is the
+    // landing you step off onto.
+    for (let floor = 0; floor < storeys; floor++) {
+      const at =
+        floor === 0
+          ? stairwell.y + stairwell.depth - 0.45
+          : stairwell.y + stairwell.depth - floor * flightRun - 0.45;
+      const door = stairDoor(stairwell, floor, at, `d${doors.length + 1}`);
+      door.joins = [STAIR_ID, circulation[floor].id];
+      doors.push(door);
     }
   }
 
-  const doors = doorsBetween(rooms);
   const front = frontDoor(rooms, doors);
   if (front) doors.push(front);
 
@@ -342,7 +678,7 @@ export function generatePlan(brief: Brief): GenerateResult {
     rooms,
     doors,
     stairs,
-    furniture: furnish(rooms, random),
+    furniture: furnish(rooms, doors, random),
   };
   return { ok: true, plan };
 }
