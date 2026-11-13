@@ -16,6 +16,9 @@ The app is repaired from what the agent found, the same test is run again,
 and the ledger in the app holds both runs: the one that found nine errors
 and the one that found none.
 
+> The hackathon submission material — the one-paragraph summary, the demo video
+> shot list and the launch posts — is in [`SUBMISSION.md`](SUBMISSION.md).
+
 ---
 
 ## Run it
@@ -177,6 +180,7 @@ kane-cli testmd run .testmuai/tests/audit-plan-walkability_test.md --agent
 
 ```
 PRD.md                      the requirement, given to the agent
+SUBMISSION.md               the one-paragraph summary, the video shot list, the posts
 flows/                      seven flow objectives, one per criterion group
 .testmuai/context.md        the PRD as the agent ingested it
 .testmuai/tests/            the test the agent designed
