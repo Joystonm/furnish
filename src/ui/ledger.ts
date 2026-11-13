@@ -18,12 +18,21 @@ export interface LedgerTest {
   detail: string;
 }
 
+export interface LedgerFinding {
+  code: string;
+  severity: 'error' | 'warning' | 'note';
+  title: string;
+  rooms: string[];
+}
+
 export interface LedgerFindings {
   errors: number;
   warnings: number;
   notes: number;
   reachable: number;
   total: number;
+  /** What the checker said, one finding at a time. */
+  issues?: LedgerFinding[];
 }
 
 export interface LedgerRun {
@@ -34,7 +43,7 @@ export interface LedgerRun {
   startedAt: string;
   status: 'passed' | 'failed';
   durationS: number;
-  credits: number;
+  credits: number | null;
   /** The commit the app was at when the run happened. */
   commit: string;
   summary: string;

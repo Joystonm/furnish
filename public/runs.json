@@ -1,0 +1,141 @@
+{
+  "runs": [
+    {
+      "id": "2026-11-13-audit-plan-walkability-run3-275bb49",
+      "name": "audit-plan-walkability",
+      "startedAt": "2026-11-13T12:58:39.887Z",
+      "status": "passed",
+      "durationS": 168,
+      "credits": 53.41854499999997,
+      "commit": "275bb49",
+      "summary": "Reviewed the findings for both the ground floor and Floor 2; neither storey had any findings.\nRead the building summary: 11 rooms are reachable and there are 0 errors.\nFinal list: rooms with no door — none; rooms that cannot be reached — none; staircase door — yes; furniture in a doorway — no.\nThe ground-floor drawing also showed the staircase, north point, and scale bar.",
+      "tests": [
+        {
+          "name": "Step 1",
+          "status": "passed",
+          "detail": ""
+        }
+      ],
+      "appFindings": {
+        "errors": 0,
+        "warnings": 0,
+        "notes": 0,
+        "reachable": 11,
+        "total": 11,
+        "issues": []
+      },
+      "evidence": ".testmuai/evidence/678d53fd-acd3-4b12-bb71-90cef494b40f.evidence",
+      "source": "kane-cli result file"
+    },
+    {
+      "id": "2026-11-13-audit-plan-walkability-run1-4061d79",
+      "name": "audit-plan-walkability",
+      "startedAt": "2026-11-13T09:49:02.615Z",
+      "status": "failed",
+      "durationS": 209.4,
+      "credits": 74.21690349999999,
+      "commit": "4061d79",
+      "summary": "The test treated a required inspection result as something that had to be true. The ground-floor findings explicitly report that the staircase has no door, so the combined checkpoint could not pass for this intentionally invalid plan.\nChange the final check to record whether the stair door is present and report the finding. Do not assert that every inspected plan must have a stair door when the fixture is designed to expose missing-door findings.\nevidence: objective_contradiction: Checkpoint assertion failed: \"The drawing shows a north point and a scale bar, and the ground floor drawing shows a stai",
+      "tests": [
+        {
+          "name": "Step 1",
+          "status": "failed",
+          "detail": "Checkpoint assertion failed: \"The drawing shows a north point and a scale bar, and the ground floor drawing shows a staircase with treads and a door into it.\""
+        }
+      ],
+      "appFindings": {
+        "errors": 9,
+        "warnings": 1,
+        "notes": 1,
+        "reachable": 4,
+        "total": 7,
+        "issues": [
+          {
+            "code": "room-not-placed",
+            "severity": "error",
+            "title": "Bedroom 3 has nowhere to go",
+            "rooms": []
+          },
+          {
+            "code": "room-not-placed",
+            "severity": "error",
+            "title": "Bathroom 2 has nowhere to go",
+            "rooms": []
+          },
+          {
+            "code": "room-unreachable",
+            "severity": "error",
+            "title": "Bedroom 1 cannot be reached",
+            "rooms": [
+              "bedroom-1"
+            ]
+          },
+          {
+            "code": "room-unreachable",
+            "severity": "error",
+            "title": "Bedroom 2 cannot be reached",
+            "rooms": [
+              "bedroom-2"
+            ]
+          },
+          {
+            "code": "room-unreachable",
+            "severity": "error",
+            "title": "Bathroom 1 cannot be reached",
+            "rooms": [
+              "bathroom-1"
+            ]
+          },
+          {
+            "code": "room-too-narrow",
+            "severity": "warning",
+            "title": "Hall is too narrow to use",
+            "rooms": [
+              "hall"
+            ]
+          },
+          {
+            "code": "room-below-brief",
+            "severity": "note",
+            "title": "Hall is smaller than the brief asked for",
+            "rooms": [
+              "hall"
+            ]
+          },
+          {
+            "code": "stair-without-door",
+            "severity": "error",
+            "title": "The staircase has no door",
+            "rooms": []
+          },
+          {
+            "code": "furniture-in-doorway",
+            "severity": "error",
+            "title": "The sofa blocks a doorway",
+            "rooms": [
+              "living-room"
+            ]
+          },
+          {
+            "code": "furniture-in-doorway",
+            "severity": "error",
+            "title": "The counter blocks a doorway",
+            "rooms": [
+              "kitchen"
+            ]
+          },
+          {
+            "code": "furniture-in-doorway",
+            "severity": "error",
+            "title": "The bed blocks a doorway",
+            "rooms": [
+              "bedroom-2"
+            ]
+          }
+        ]
+      },
+      "evidence": ".testmuai/evidence/da896aa0-c909-4360-84af-3b5e8c588a07.evidence",
+      "source": "kane-cli result file"
+    }
+  ]
+}

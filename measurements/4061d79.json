@@ -1,0 +1,94 @@
+{
+  "commit": "4061d79",
+  "plan": "drawn",
+  "errors": 9,
+  "warnings": 1,
+  "notes": 1,
+  "reachable": 4,
+  "total": 7,
+  "issues": [
+    {
+      "code": "room-not-placed",
+      "severity": "error",
+      "title": "Bedroom 3 has nowhere to go",
+      "rooms": []
+    },
+    {
+      "code": "room-not-placed",
+      "severity": "error",
+      "title": "Bathroom 2 has nowhere to go",
+      "rooms": []
+    },
+    {
+      "code": "room-unreachable",
+      "severity": "error",
+      "title": "Bedroom 1 cannot be reached",
+      "rooms": [
+        "bedroom-1"
+      ]
+    },
+    {
+      "code": "room-unreachable",
+      "severity": "error",
+      "title": "Bedroom 2 cannot be reached",
+      "rooms": [
+        "bedroom-2"
+      ]
+    },
+    {
+      "code": "room-unreachable",
+      "severity": "error",
+      "title": "Bathroom 1 cannot be reached",
+      "rooms": [
+        "bathroom-1"
+      ]
+    },
+    {
+      "code": "room-too-narrow",
+      "severity": "warning",
+      "title": "Hall is too narrow to use",
+      "rooms": [
+        "hall"
+      ]
+    },
+    {
+      "code": "room-below-brief",
+      "severity": "note",
+      "title": "Hall is smaller than the brief asked for",
+      "rooms": [
+        "hall"
+      ]
+    },
+    {
+      "code": "stair-without-door",
+      "severity": "error",
+      "title": "The staircase has no door",
+      "rooms": []
+    },
+    {
+      "code": "furniture-in-doorway",
+      "severity": "error",
+      "title": "The sofa blocks a doorway",
+      "rooms": [
+        "living-room"
+      ]
+    },
+    {
+      "code": "furniture-in-doorway",
+      "severity": "error",
+      "title": "The counter blocks a doorway",
+      "rooms": [
+        "kitchen"
+      ]
+    },
+    {
+      "code": "furniture-in-doorway",
+      "severity": "error",
+      "title": "The bed blocks a doorway",
+      "rooms": [
+        "bedroom-2"
+      ]
+    }
+  ],
+  "measuredAt": "2026-11-13T13:17:52.313Z"
+}

@@ -7,12 +7,13 @@ output-*
 # Screenshots taken while working, not part of the app.
 shots/
 
-# Kane's working folders — the designed test, the run results and the sealed
-# evidence pack are the proof of the closed loop, so they are committed. The
-# transient staging around them is not.
+# Kane's working folders — the designed test, the run results, the agent's
+# event stream and the sealed evidence packs are the proof of the closed
+# loop, so they are committed. The transient staging around them is not.
 .testmuai/*
 !.testmuai/context.md
 !.testmuai/tests
+!.testmuai/results
 !.testmuai/evidence
 .testmuai/tests/*
 !.testmuai/tests/*_test.md
@@ -24,3 +25,11 @@ shots/
 
 # Kane's own run folders — the scratch is not part of the app.
 kane-runs/
+
+# Kane’s own event streams are session logs — they stay on the machine that
+# produced them. The result file and the sealed evidence pack are the record.
+.testmuai/results/*.ndjson
+
+# Working files that are not part of the app.
+scripts/.*.tmp
+scripts/.shoot.mjs

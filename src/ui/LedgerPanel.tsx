@@ -59,6 +59,19 @@ export function LedgerPanel() {
                 </span>
               </div>
             ) : null}
+            {run.appFindings?.issues?.length ? (
+              <ul className="run__list run__list--findings" data-testid="ledger-findings">
+                {run.appFindings.issues.map((issue) => (
+                  <li key={issue.code + issue.title}>
+                    <span
+                      className={`run__dot run__dot--${issue.severity === 'error' ? 'failed' : 'skipped'}`}
+                      style={{ display: 'inline-block', marginRight: 6 }}
+                    />
+                    {issue.title}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             <div className="kv">
               <span className="kv__key">Commit</span>
               <span className="kv__value">{run.commit || '—'}</span>

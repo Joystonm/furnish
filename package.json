@@ -11,7 +11,9 @@
     "preview": "vite preview --port 5199 --strictPort",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "verify": "npm run typecheck && npm run test && npm run build"
+    "verify": "npm run typecheck && npm run test && npm run build",
+    "verify:flows": "node scripts/verify.mjs",
+    "measure": "node scripts/measure.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
