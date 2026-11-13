@@ -1,0 +1,12 @@
+node_modules
+dist
+.testmuai
+output-*
+*.local
+.DS_Store
+
+# Screenshots taken while working, not part of the app.
+shots/
+
+# Kane's working folders — the designed flows are committed, the scratch is not.
+kane-runs/
