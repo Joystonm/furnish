@@ -76,6 +76,19 @@ export function LedgerPanel() {
               <span className="kv__key">Commit</span>
               <span className="kv__value">{run.commit || '—'}</span>
             </div>
+            <div className="kv">
+              <span className="kv__key">The run cost</span>
+              <span className="kv__value">
+                {run.durationS ? formatDuration(run.durationS) : '—'}
+                {run.credits !== null ? ` · ${round(run.credits)} credits` : ''}
+              </span>
+            </div>
+            {run.evidence ? (
+              <div className="kv">
+                <span className="kv__key">Evidence</span>
+                <span className="kv__value">{run.evidence}</span>
+              </div>
+            ) : null}
             <ul className="run__list">
               {run.tests.map((test) => (
                 <li key={test.name}>
@@ -99,4 +112,14 @@ function formatWhen(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   return date.toISOString().replace('T', ' ').slice(0, 16);
+}
+
+function formatDuration(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds % 60);
+  return minutes ? `${minutes}m ${rest}s` : `${rest}s`;
+}
+
+function round(value: number): number {
+  return Math.round(value * 100) / 100;
 }

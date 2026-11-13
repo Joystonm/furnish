@@ -28,7 +28,7 @@
  * and then `npm run preview`) for the flows to have anything to look at.
  */
 
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -84,8 +84,11 @@ function readFlows() {
 async function appFindings() {
   const cache = join(ROOT, 'node_modules', '.cache', 'furnish-report.mjs');
   mkdirSync(dirname(cache), { recursive: true });
+  // esbuild is a dependency of vite, so it is in the project's own bin folder
+  // rather than on the machine's PATH.
+  const esbuild = join(ROOT, 'node_modules', '.bin', process.platform === 'win32' ? 'esbuild.cmd' : 'esbuild');
   const bundled = spawnSync(
-    'esbuild',
+    esbuild,
     [
       join(ROOT, 'src', 'model', 'report.ts'),
       '--bundle',
@@ -132,68 +135,95 @@ function currentCommit() {
  *
  * kane-cli writes NDJSON on stdout: a stream of events, and at the end a
  * `run_end` event with the verdict, the duration and the credits it cost.
+ *
+ * The stream is read as it arrives rather than collected into one buffer. A
+ * browser run produces a lot of output, and a fixed buffer would cut the run
+ * off before it finished.
  */
 function runFlow(flow) {
-  const args = ['run', flow.objective, '--agent', '--name', flow.slug];
-  const result = spawnSync('kane-cli', args, {
-    cwd: ROOT,
-    encoding: 'utf8',
-    env: Object.assign({}, process.env, { KANE_CLI_USER_AGENT: 'claude-code' }),
-    maxBuffer: 64 * 1024 * 1024,
-  });
+  return new Promise((resolve) => {
+    const child = spawn('kane-cli', ['run', flow.objective, '--agent', '--name', flow.slug], {
+      cwd: ROOT,
+      env: Object.assign({}, process.env, { KANE_CLI_USER_AGENT: 'claude-code' }),
+    });
 
-  const events = [];
-  for (const line of (result.stdout ?? '').split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith('{')) continue;
-    try {
-      events.push(JSON.parse(trimmed));
-    } catch {
-      // not an event — the CLI prints other things too
-    }
-  }
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
 
-  const end = events.find((event) => event.type === 'run_end');
-  const steps = events.filter(
-    (event) => !event.type && (event.status === 'done' || event.status === 'failed'),
-  );
-  const failures = events
-    .filter((event) => event.type === 'error')
-    .map((event) => event.message ?? JSON.stringify(event));
+    child.on('error', (error) => {
+      resolve(didNotRun('kane-cli could not be started: ' + error.message));
+    });
 
-  if (!end) {
-    const tail = result.stderr ? result.stderr.trim().split('\n').pop() : '';
-    return {
-      status: 'failed',
-      summary:
-        failures[0] ??
-        'kane-cli exited with code ' + result.status + ' and produced no result' +
-          (tail ? ': ' + tail : ''),
-      durationS: 0,
-      credits: null,
-      testUrl: null,
-      evidence: null,
-      tests: [
-        { name: flow.name, status: 'failed', detail: 'The run did not produce a result.' },
-      ],
-    };
-  }
+    child.on('close', (code) => {
+      const events = [];
+      for (const line of stdout.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('{')) continue;
+        try {
+          events.push(JSON.parse(trimmed));
+        } catch {
+          // not an event — the CLI prints other things too
+        }
+      }
 
-  const failedStep = steps.find((event) => event.status === 'failed');
-  return {
-    status: end.status === 'passed' ? 'passed' : 'failed',
-    summary: end.summary ?? end.one_liner ?? '',
-    durationS: Math.round(end.duration ?? 0),
-    credits: typeof end.credits_consumed === 'number' ? end.credits_consumed : null,
-    testUrl: end.test_url ?? null,
-    evidence: findEvidence(),
-    tests: [
-      {
-        name: flow.name,
+      const end = events.find((event) => event.type === 'run_end');
+      const steps = events.filter(
+        (event) => !event.type && (event.status === 'done' || event.status === 'failed'),
+      );
+      const failures = events
+        .filter((event) => event.type === 'error')
+        .map((event) => event.message ?? JSON.stringify(event));
+
+      if (!end) {
+        const tail = stderr.trim().split('\n').filter(Boolean).pop();
+        resolve(
+          didNotRun(
+            failures[0] ??
+              'kane-cli exited with code ' + code + ' and produced no result' +
+                (tail ? ': ' + tail : ''),
+          ),
+        );
+        return;
+      }
+
+      const failedStep = steps.find((event) => event.status === 'failed');
+      resolve({
         status: end.status === 'passed' ? 'passed' : 'failed',
-        detail: failedStep?.remark ? String(failedStep.remark).slice(0, 240) : '',
-      },
-    ],
+        summary: end.summary ?? end.one_liner ?? '',
+        durationS: Math.round(end.duration ?? 0),
+        credits: typeof end.credits_consumed === 'number' ? end.credits_consumed : null,
+        testUrl: end.test_url ?? null,
+        evidence: findEvidence(),
+        tests: [
+          {
+            name: flow.name,
+            status: end.status === 'passed' ? 'passed' : 'failed',
+            detail: failedStep?.remark ? String(failedStep.remark).slice(0, 240) : '',
+          },
+        ],
+      });
+    });
+  });
+}
+
+/** A run that never happened. It is recorded as a failure, not hidden. */
+function didNotRun(reason) {
+  return {
+    status: 'failed',
+    summary: reason,
+    durationS: 0,
+    credits: null,
+    testUrl: null,
+    evidence: null,
+    tests: [{ name: 'The run', status: 'failed', detail: reason.slice(0, 240) }],
   };
 }
 
@@ -446,7 +476,7 @@ async function main() {
 
   for (const flow of chosen) {
     console.log('\n> ' + flow.name);
-    const outcome = runFlow(flow);
+    const outcome = await runFlow(flow);
     console.log('  ' + outcome.status + ' — ' + outcome.summary);
 
     const record = {
