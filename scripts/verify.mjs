@@ -131,6 +131,35 @@ function currentCommit() {
 // ------------------------------------------------------------------- kane
 
 /**
+ * How to start kane-cli.
+ *
+ * On Windows the thing on PATH is a .cmd shim, and Node will not run a .cmd
+ * without a shell — and a shell mangles an objective that spans several
+ * lines. So the real script behind the shim is found and started with node
+ * directly, which keeps the objective exactly as it is written here.
+ */
+function kaneCommand() {
+  if (process.platform !== 'win32') return { command: 'kane-cli', prefix: [] };
+  const found = spawnSync('where', ['kane-cli'], { encoding: 'utf8' });
+  const shim = (found.stdout ?? '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.toLowerCase().endsWith('.cmd'));
+  if (shim) {
+    const script = join(
+      dirname(shim),
+      'node_modules',
+      '@testmuai',
+      'kane-cli',
+      'bin',
+      'kane-cli.cjs',
+    );
+    if (existsSync(script)) return { command: process.execPath, prefix: [script] };
+  }
+  return { command: 'kane-cli', prefix: [] };
+}
+
+/**
  * Run one flow with kane-cli and read what it says.
  *
  * kane-cli writes NDJSON on stdout: a stream of events, and at the end a
@@ -142,10 +171,15 @@ function currentCommit() {
  */
 function runFlow(flow) {
   return new Promise((resolve) => {
-    const child = spawn('kane-cli', ['run', flow.objective, '--agent', '--name', flow.slug], {
-      cwd: ROOT,
-      env: Object.assign({}, process.env, { KANE_CLI_USER_AGENT: 'claude-code' }),
-    });
+    const kane = kaneCommand();
+    const child = spawn(
+      kane.command,
+      [...kane.prefix, 'run', flow.objective, '--agent', '--name', flow.slug],
+      {
+        cwd: ROOT,
+        env: Object.assign({}, process.env, { KANE_CLI_USER_AGENT: 'claude-code' }),
+      },
+    );
 
     let stdout = '';
     let stderr = '';
@@ -159,7 +193,9 @@ function runFlow(flow) {
     });
 
     child.on('error', (error) => {
-      resolve(didNotRun('kane-cli could not be started: ' + error.message));
+      // The CLI itself would not start. That is a fault in this script or in
+      // the machine, not a run that failed, so it is not put in the ledger.
+      resolve({ didNotStart: 'kane-cli could not be started: ' + error.message });
     });
 
     child.on('close', (code) => {
@@ -257,6 +293,43 @@ function findEvidence() {
  * `scripts/measure.mjs` took at that commit, not a number typed here.
  */
 function readRecordedRuns() {
+  const runs = [...readResultFiles(), ...readOutputFolders()];
+  return numberRuns(runs);
+}
+
+/**
+ * Give every run an id in the same shape.
+ *
+ * The id is what the ledger keeps a run under, so it has to be the same every
+ * time the ledger is rebuilt — otherwise a rebuild piles a second copy of the
+ * same run on top of the first. It is the date, the flow, the number of that
+ * run of the flow, and the commit.
+ */
+function numberRuns(runs) {
+  const seen = new Map();
+  for (const run of runs) {
+    const date = String(run.startedAt).slice(0, 10) || 'undated';
+    const key = date + '-' + run.name;
+    const n = (seen.get(key) ?? 0) + 1;
+    seen.set(key, n);
+    run.id = `${key}-run${n}-${run.commit || 'unknown'}`;
+  }
+  return runs;
+}
+
+/**
+ * The runs kane-cli wrote as result files.
+ *
+ * kane-cli writes a result file per run of a saved test. Those files are the
+ * record of what really happened, so the ledger is built from them rather
+ * than from anything written by hand.
+ *
+ * The file's name carries the commit the app was at when the run happened
+ * (`<date>-<flow>-run<n>-<commit>.md`). That commit is what the ledger uses
+ * to find what the app's own checker said at the time — the measurement
+ * `scripts/measure.mjs` took at that commit, not a number typed here.
+ */
+function readResultFiles() {
   if (!existsSync(RESULTS_DIR)) return [];
   const runs = [];
   for (const name of readdirSync(RESULTS_DIR).sort()) {
@@ -265,7 +338,7 @@ function readRecordedRuns() {
     const text = readFileSync(join(RESULTS_DIR, name), 'utf8');
     const front = text.match(/^---\n([\s\S]*?)\n---/);
     const field = (key) =>
-      front?.[1]?.match(new RegExp('^' + key + ':\s*(.+)$', 'm'))?.[1]?.trim();
+      front?.[1]?.match(new RegExp('^' + key + ':\\s*(.+)$', 'm'))?.[1]?.trim();
     const status = field('status');
     if (!status) continue;
     const reason = text.match(/^Reason:\s*(.+)$/m)?.[1]?.trim() ?? '';
@@ -306,6 +379,85 @@ function readRecordedRuns() {
     });
   }
   return runs;
+}
+
+/**
+ * The runs kane-cli wrote as run folders.
+ *
+ * A `kane-cli run --name <slug>` leaves a folder behind at
+ * `.testmuai/tests/output-<slug>/` with a Result.md in it. That file does not
+ * carry the commit, so it is read from the history instead: the last commit
+ * before the run started is the tree the app was running from.
+ */
+function readOutputFolders() {
+  const dir = join(ROOT, '.testmuai', 'tests');
+  if (!existsSync(dir)) return [];
+  const runs = [];
+  for (const name of readdirSync(dir).sort()) {
+    if (!name.startsWith('output-')) continue;
+    const slug = name.slice('output-'.length);
+    const resultPath = join(dir, name, 'Result.md');
+    if (!existsSync(resultPath)) continue;
+    const text = readFileSync(resultPath, 'utf8');
+    const front = text.match(/^---\n([\s\S]*?)\n---/);
+    const field = (key) =>
+      front?.[1]?.match(new RegExp('^' + key + ':\\s*(.+)$', 'm'))?.[1]?.trim();
+    const status = field('status');
+    if (!status) continue;
+
+    const started = field('started') ?? '';
+    const commit = commitAt(started);
+    const measurement = readMeasurement(commit);
+    const agent = readAgentRun(slug, field('session_id'));
+    const step = text.match(/^##\s+Step\s+(\d+)/m);
+    const digest = text.match(/^md5:\s*(\S+)/m)?.[1] ?? '';
+
+    runs.push({
+      id: '',
+      name: slug,
+      startedAt: started,
+      status: status === 'passed' ? 'passed' : 'failed',
+      durationS: Number(field('duration_s') ?? 0),
+      credits: agent?.credits_consumed ?? null,
+      commit,
+      summary: agent?.summary ?? 'The run ' + status + '.',
+      tests: [
+        {
+          name: step ? 'Step ' + step[1] : 'The run',
+          status: status === 'passed' ? 'passed' : 'failed',
+          detail: (agent?.one_liner || digest).slice(0, 240),
+        },
+      ],
+      appFindings: measurement
+        ? {
+            errors: measurement.errors,
+            warnings: measurement.warnings,
+            notes: measurement.notes,
+            reachable: measurement.reachable,
+            total: measurement.total,
+            issues: measurement.issues ?? [],
+          }
+        : null,
+      evidence: agent?.evidence ?? null,
+      source: 'kane-cli run',
+    });
+  }
+  return runs;
+}
+
+/**
+ * The commit that was checked out when something happened.
+ *
+ * The last commit before a moment in time is the tree that was checked out at
+ * that moment.
+ */
+function commitAt(iso) {
+  if (!iso) return '';
+  const result = spawnSync('git', ['log', '-1', '--format=%h', '--before=' + iso], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+  return result.status === 0 ? result.stdout.trim() : '';
 }
 
 /** What the app's own checker said at a commit. */
@@ -477,6 +629,11 @@ async function main() {
   for (const flow of chosen) {
     console.log('\n> ' + flow.name);
     const outcome = await runFlow(flow);
+    if (outcome.didNotStart) {
+      console.error(outcome.didNotStart);
+      process.exitCode = 1;
+      return;
+    }
     console.log('  ' + outcome.status + ' — ' + outcome.summary);
 
     const record = {

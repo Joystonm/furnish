@@ -335,6 +335,7 @@ export function PlanView({ plan, floor, flagged, selected, onSelect }: Props) {
         {/* the doors */}
         {doors.map((door) => {
           const glyph = doorGlyph(door, plan);
+          const isFront = door.kind === 'front';
           return (
             <g key={door.id} data-testid="plan-door" data-door-id={door.id} data-door-kind={door.kind}>
               <rect
@@ -344,15 +345,41 @@ export function PlanView({ plan, floor, flagged, selected, onSelect }: Props) {
                 height={glyph.gap.depth}
                 fill="#ffffff"
               />
-              <path d={glyph.arc} fill="none" stroke="#94a3b8" strokeWidth={0.05} />
+              <path
+                d={glyph.arc}
+                fill="none"
+                stroke={isFront ? '#0d9488' : '#94a3b8'}
+                strokeWidth={isFront ? 0.07 : 0.05}
+              />
               <line
                 x1={glyph.leaf.x1}
                 y1={glyph.leaf.y1}
                 x2={glyph.leaf.x2}
                 y2={glyph.leaf.y2}
-                stroke="#0f172a"
-                strokeWidth={0.09}
+                stroke={isFront ? '#0d9488' : '#0f172a'}
+                strokeWidth={isFront ? 0.12 : 0.09}
               />
+              {isFront ? (
+                <g data-testid="plan-front-door">
+                  {/* an arrow in from the street, and a word on it */}
+                  <path
+                    d={`M ${door.x} ${door.y - 0.06} L ${door.x - 0.14} ${door.y + 0.26} L ${door.x + 0.14} ${
+                      door.y + 0.26
+                    } Z`}
+                    fill="#0d9488"
+                  />
+                  <text
+                    x={door.x}
+                    y={door.y + 0.72}
+                    textAnchor="middle"
+                    fontSize={0.36}
+                    fontWeight={700}
+                    fill="#0f766e"
+                  >
+                    FRONT DOOR
+                  </text>
+                </g>
+              ) : null}
             </g>
           );
         })}
