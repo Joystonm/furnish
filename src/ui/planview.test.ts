@@ -97,3 +97,42 @@ describe('the door into the stairwell', () => {
     expect(reveal).toBeGreaterThan(0.19);
   });
 });
+
+/**
+ * The flight that arrives at an upper storey has to be drawn as a flight.
+ *
+ * The plan of an upper storey used to show the flight arriving there as an
+ * empty dashed rectangle — the opening in the floor. That is honest about the
+ * slab, but it does not show the flight, so anyone reading the upper plan
+ * could not see where the stairs come from or which way they run.
+ */
+describe('the flight arriving at an upper storey', () => {
+  function drawFloor(storey: number) {
+    return renderToStaticMarkup(
+      createElement(PlanView, {
+        plan: plan(),
+        floor: storey,
+        flagged: new Set<string>(),
+        selected: null,
+        onSelect: () => {},
+      }),
+    );
+  }
+
+  it('is drawn on the storey it arrives at', () => {
+    expect(drawFloor(1)).toContain('data-testid="plan-stair-arriving"');
+  });
+
+  it('shows its treads, and the way it comes', () => {
+    const markup = drawFloor(1);
+    const at = markup.indexOf('data-testid="plan-stair-arriving"');
+    const group = markup.slice(at, markup.indexOf('</g>', at));
+    expect(group).toContain('marker-end="url(#stair-arrow)"');
+    expect(group.match(/stroke="#94a3b8"/g)?.length ?? 0).toBeGreaterThan(4);
+  });
+
+  it('and the storey it leaves still shows the flight it starts', () => {
+    const markup = drawFloor(0);
+    expect(markup).toContain('data-testid="plan-stair"');
+  });
+});

@@ -123,10 +123,13 @@ function doorGlyph(door: Door, plan: Plan) {
  * The flight, drawn where it actually is.
  *
  * On the storey the flight starts from it is a flight: treads and a line
- * showing which way you go. On the storey it arrives at, it is an opening —
- * the floor is not there, and the drawing has to say so.
+ * showing which way you go. On the storey it arrives at, the floor is open
+ * where it comes through — so the opening is drawn as a dashed edge — but
+ * the flight is still drawn inside it, with its treads and its arrow, because
+ * a person looking at the upper storey has to be able to see the flight that
+ * arrives there and which way it comes.
  */
-function StairGlyph({ stair, mode }: { stair: Stair; mode: 'up' | 'void' }) {
+function StairGlyph({ stair, mode }: { stair: Stair; mode: 'up' | 'arriving' }) {
   const top = stair.y + stair.flightOffset;
   const treads = 9;
   const lines = [];
@@ -149,9 +152,13 @@ function StairGlyph({ stair, mode }: { stair: Stair; mode: 'up' | 'void' }) {
   const fromY = stair.direction === 1 ? top + stair.flightRun * 0.25 : top + stair.flightRun * 0.75;
   const toY = stair.direction === 1 ? top + stair.flightRun * 0.75 : top + stair.flightRun * 0.25;
 
-  if (mode === 'void') {
+  if (mode === 'arriving') {
     return (
-      <g data-testid="plan-stair-void" data-stair-id={stair.id}>
+      <g
+        data-testid="plan-stair-arriving"
+        data-stair-id={stair.id}
+        data-risers={stair.risers}
+      >
         <rect
           x={stair.x}
           y={top}
@@ -161,6 +168,16 @@ function StairGlyph({ stair, mode }: { stair: Stair; mode: 'up' | 'void' }) {
           stroke="#64748b"
           strokeWidth={0.08}
           strokeDasharray="0.2 0.16"
+        />
+        {lines}
+        <line
+          x1={midX}
+          y1={fromY}
+          x2={midX}
+          y2={toY}
+          stroke="#0d9488"
+          strokeWidth={0.1}
+          markerEnd="url(#stair-arrow)"
         />
       </g>
     );
@@ -338,9 +355,9 @@ export function PlanView({ plan, floor, flagged, selected, onSelect }: Props) {
             or the drawing does not show what the model says. */}
         {stairs.map((stair) => (
           <StairGlyph
-            key={`${stair.id}-${stair.floor === floor ? 'up' : 'void'}`}
+            key={`${stair.id}-${stair.floor === floor ? 'up' : 'arriving'}`}
             stair={stair}
-            mode={stair.floor === floor ? 'up' : 'void'}
+            mode={stair.floor === floor ? 'up' : 'arriving'}
           />
         ))}
 

@@ -216,7 +216,41 @@ describe('the generator', () => {
     const result = generatePlan(brief({ plotWidth: 3, plotDepth: 3, rooms: [] }));
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.refusal.reason).toMatch(/too small/i);
+    expect(result.refusal.reason).toMatch(/does not fit|too small/i);
+    expect(result.refusal.detail).toMatch(/too small/i);
+  });
+
+  /**
+   * A refusal has to say by how much the program does not fit.
+   *
+   * It used to give the size of the plot in metres and nothing else, which
+   * left the person to work out the gap themselves — and for a plot too
+   * small to build on, it gave no gap at all. Both numbers have to be in the
+   * message: the area the program asks for, and the area the plot holds.
+   */
+  it('a refusal quotes both the area asked for and the area the plot holds', () => {
+    const rooms: BriefRoom[] = [
+      { id: 'living-room', label: 'Living room', kind: 'living', area: 400, floor: 0 },
+    ];
+    const result = generatePlan(brief({ rooms, plotWidth: 10, plotDepth: 10 }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.detail).toMatch(/asks for [\d.]+ m²/);
+    expect(result.refusal.detail).toMatch(/holds [\d.]+ m²/);
+    expect(result.refusal.detail).toMatch(/too much/);
+  });
+
+  it('a refusal for a plot too small to build on says so, and still says by how much', () => {
+    const rooms: BriefRoom[] = [
+      { id: 'living-room', label: 'Living room', kind: 'living', area: 400, floor: 0 },
+    ];
+    const result = generatePlan(brief({ rooms, plotWidth: 6, plotDepth: 5 }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.refusal.shortfall).toBeGreaterThan(0);
+    expect(result.refusal.detail).toMatch(/too small to build on/);
+    expect(result.refusal.detail).toMatch(/asks for [\d.]+ m²/);
+    expect(result.refusal.detail).toMatch(/holds [\d.]+ m²/);
   });
 
   it('never produces a room with a negative side', () => {

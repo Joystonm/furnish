@@ -117,8 +117,12 @@ export function BriefPanel(props: Props) {
         </button>
         {refusal ? (
           <div className="refusal" data-testid="refusal" style={{ marginTop: 12 }}>
-            <div className="refusal__title">{refusal.reason}</div>
-            <div className="refusal__detail">{refusal.detail}</div>
+            <div className="refusal__title" data-testid="refusal-title">
+              {refusal.reason}
+            </div>
+            <div className="refusal__detail" data-testid="refusal-detail">
+              {refusal.detail}
+            </div>
           </div>
         ) : null}
       </section>

@@ -523,21 +523,35 @@ function placeClear(
 export function generatePlan(brief: Brief): GenerateResult {
   const usableWidth = brief.plotWidth - 2 * SETBACK;
   const usableDepth = brief.plotDepth - 2 * SETBACK;
+  const storeys = Math.max(1, Math.min(4, brief.storeys));
+  const programArea = sumAreas(brief.rooms);
+
+  // What the plot holds, and what the program asks for.
+  //
+  // Every refusal quotes both, and says by how much they differ. A refusal
+  // that only says "it does not fit" leaves the person to guess which of the
+  // two numbers is wrong — and a refusal that gives the size of the plot but
+  // not the size of the program has not said by how much anything does not
+  // fit, which is the whole of what the person asked for.
+  const perStorey = Math.max(0, usableWidth * usableDepth);
+  const held = perStorey * storeys;
+  const buildable = `${Math.max(0, usableWidth).toFixed(1)} × ${Math.max(0, usableDepth).toFixed(1)} m`;
+  const storeysWord = storeys === 1 ? 'storey' : 'storeys';
 
   if (usableWidth < 3 || usableDepth < 3) {
+    const over = Math.max(0, programArea - held);
     return {
       ok: false,
       refusal: {
-        reason: 'The plot is too small to build on',
-        detail: `A ${brief.plotWidth} × ${brief.plotDepth} m plot leaves ${usableWidth.toFixed(1)} × ${usableDepth.toFixed(1)} m inside the ${SETBACK} m setback.`,
-        shortfall: 0,
+        reason: 'The program does not fit the plot',
+        detail: `A ${brief.plotWidth} × ${brief.plotDepth} m plot is too small to build on: inside the ${SETBACK} m setback it leaves ${buildable}, so it holds ${perStorey.toFixed(1)} m² on each storey and ${held.toFixed(1)} m² over ${storeys} ${storeysWord}. The program asks for ${programArea.toFixed(1)} m², so it is ${over.toFixed(1)} m² too much.`,
+        shortfall: over,
       },
     };
   }
 
   const usable: Rect = { x: SETBACK, y: SETBACK, width: usableWidth, depth: usableDepth };
-  const capacity = usableWidth * usableDepth;
-  const storeys = Math.max(1, Math.min(4, brief.storeys));
+  const capacity = perStorey;
 
   const circulation: BriefRoom[] = [];
   for (let floor = 0; floor < storeys; floor++) {
@@ -550,12 +564,13 @@ export function generatePlan(brief: Brief): GenerateResult {
   for (let floor = 0; floor < storeys; floor++) {
     const need = sumAreas(brief.rooms.filter((r) => r.floor === floor));
     if (need > capacity) {
+      const over = need - capacity;
       return {
         ok: false,
         refusal: {
           reason: 'The program does not fit the plot',
-          detail: `Storey ${floor + 1} asks for ${need.toFixed(1)} m², and the plot holds ${capacity.toFixed(1)} m² inside the ${SETBACK} m setback.`,
-          shortfall: need - capacity,
+          detail: `The program asks for ${programArea.toFixed(1)} m² over ${storeys} ${storeysWord}, and ${need.toFixed(1)} m² of it on storey ${floor + 1}. The plot holds ${capacity.toFixed(1)} m² on each storey inside the ${SETBACK} m setback — ${over.toFixed(1)} m² too much on storey ${floor + 1}.`,
+          shortfall: over,
         },
       };
     }
@@ -566,12 +581,13 @@ export function generatePlan(brief: Brief): GenerateResult {
   const { envelope, corridor: corridorWidth, area } = fitEnvelope(usable, roomsNeed, circulationArea);
 
   if (area > capacity + EPS) {
+    const over = area - capacity;
     return {
       ok: false,
       refusal: {
         reason: 'The program does not fit the plot',
-        detail: `The program needs ${area.toFixed(1)} m² once the stairwell and the corridor are taken out, and the plot holds ${capacity.toFixed(1)} m² inside the ${SETBACK} m setback.`,
-        shortfall: area - capacity,
+        detail: `The program asks for ${programArea.toFixed(1)} m² and needs ${area.toFixed(1)} m² once the stairwell and the corridor are taken out. The plot holds ${capacity.toFixed(1)} m² on each storey inside the ${SETBACK} m setback — ${over.toFixed(1)} m² too much on a storey.`,
+        shortfall: over,
       },
     };
   }
