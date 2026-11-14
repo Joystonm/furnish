@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { loadLedger, type LedgerRun } from './ledger';
+import { loadLedger, summariseRuns, type LedgerRun } from './ledger';
 
 export function LedgerPanel() {
   const [runs, setRuns] = useState<LedgerRun[] | null>(null);
@@ -32,17 +32,16 @@ export function LedgerPanel() {
     );
   }
 
-  const passed = runs.filter((run) => run.status === 'passed').length;
-  const failed = runs.length - passed;
+  const tally = summariseRuns(runs);
 
   return (
     <div className="ledger" data-testid="ledger" data-run-count={runs.length}>
       <div className="ledger__tally" data-testid="ledger-tally">
         <span className="ledger__count">
-          <strong>{runs.length}</strong> runs
+          <strong>{tally.total}</strong> runs
         </span>
-        <span className="ledger__pill ledger__pill--ok">{passed} passed</span>
-        <span className="ledger__pill ledger__pill--fail">{failed} failed</span>
+        <span className="ledger__pill ledger__pill--ok">{tally.passed} passed</span>
+        <span className="ledger__pill ledger__pill--fail">{tally.failed} failed</span>
       </div>
       {runs.map((run) => (
         <div className="run" key={run.id} data-testid="ledger-run" data-run-status={run.status}>

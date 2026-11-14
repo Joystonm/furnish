@@ -62,6 +62,25 @@ export interface LedgerFile {
   runs: LedgerRun[];
 }
 
+export interface LedgerTally {
+  /** Every run on record, passed or not. */
+  total: number;
+  passed: number;
+  failed: number;
+}
+
+/**
+ * Count the runs.
+ *
+ * A run that did not pass counts as failed, including the ones where the
+ * agent ran out of steps rather than the app being wrong — the ledger says
+ * which of those it was, and the tally does not soften the number.
+ */
+export function summariseRuns(runs: LedgerRun[]): LedgerTally {
+  const passed = runs.filter((run) => run.status === 'passed').length;
+  return { total: runs.length, passed, failed: runs.length - passed };
+}
+
 /**
  * Read the ledger.
  *
