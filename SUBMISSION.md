@@ -47,14 +47,15 @@ on screen for more than half the video. YouTube, unlisted.
 | Time | Shot | What is on screen |
 |---|---|---|
 | 0:00 | **Cold open — the app** | The studio running, a floor plan already drawn, the findings panel clean, the status bar reading `Rooms 11/11 reachable · 0 errors`. Say what the app is in one sentence. |
-| 0:20 | **Cold open — the ledger** | Click to the **Ledger** tab. Two runs. The first one is red and lists eleven findings. *"This is the point of the project."* |
+| 0:20 | **Cold open — the ledger** | Click to the **Ledger** tab. Nineteen runs, newest first — green and red. Scroll to the very first one: red, and it lists the eleven findings the agent read off the panel. *"This is the point of the project."* |
 | 0:45 | **The requirement** | `PRD.md` open in the editor. Then the terminal: `kane-cli context ingest PRD.md --mode agent`, then `kane-cli design tests --mode agent`. The designed test file appears — point out the `assurance:` block. *"Kane wrote the test; nobody did."* |
 | 1:15 | **The failing run** | `kane-cli run "<objective>" --agent --name audit-plan-walkability`. The real browser opens and moves on its own. Let the run play — cut to the app window when it starts clicking around. |
 | 1:55 | **The failing result card** | The red card. Duration, credits, one line of what happened. Then open the evidence pack: the screenshot of the findings panel with the eleven findings in it. |
 | 2:20 | **The repair** | `git show 275bb49 --stat` and the diff of the generator. Name the three changes: doors as a tree, the stair taken out first, furniture placed last. |
 | 2:50 | **The passing run** | The **same** test again — same file, same `definition.sha256`. The browser runs. It passes. The green card: 11/11 reachable, 0 errors. |
-| 3:20 | **The ledger** | Back in the app, the Ledger tab. Both runs, side by side: the red one and the green one, the failing findings still listed, the commit each ran against, what each cost. |
-| 3:45 | **Close** | `npm install && npm run dev`. The URL. One line: *"The plan is checked by someone who did not write it."* |
+| 3:20 | **The ledger** | Back in the app, the Ledger tab. Scroll between the red one and the green one: the failing findings still listed, the commit each ran against, the checker's own findings, what each cost. |
+| 3:35 | **One more loop, fast** | The **Floor 2** tab: the flight arriving upstairs, with its treads and its arrow — a thing that was a dashed hole until the agent said so. Then the refusal: set the plot to 6 × 5, press **Generate the plan**, and the app refuses and says *"The program asks for 105.0 m² … it is 93.0 m² too much."* |
+| 3:55 | **Close** | `npm install && npm run dev`. The URL. One line: *"The plan is checked by someone who did not write it."* |
 
 **Recording notes.** Run the app from the **build** (`npm run build && npm run preview`)
 — the dev server's dependency re-optimisation caused one screenshot to time out
@@ -123,7 +124,7 @@ that has not been made public yet.
 | Live URL (optional) | ⬜ not deployed — the runnable command is the fallback |
 | Two public launch posts | ⬜ **not posted yet** — drafts in §3 |
 | Credentials for any login/paid service | ✅ none — no login, no paid service, no API key |
-| Recorded-run / backup-deployment fallback | ✅ nineteen sealed evidence packs and every run's own record in `.testmuai/results/` |
+| Recorded-run / backup-deployment fallback | ✅ nineteen sealed evidence packs and every run's own result file in `.testmuai/tests/output-*/Result.md` |
 | TestMu AI account, same email for credit claim | ✅ the account used for the runs |
 | Repo pushed before 11:59 PM IST, 19 Nov | ⬜ **the one hard blocker** |
 

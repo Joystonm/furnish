@@ -57,7 +57,8 @@ deterministic — the same brief always produces the same plan.
 [`PRD.md`](PRD.md) is the contract. Twenty-two acceptance criteria, each
 one written so that a browser can confirm or contradict it. The requirements
 were given to Kane CLI with `kane-cli context ingest PRD.md --mode agent`, and
-the ingested copy is kept at [`.testmuai/context.md`](.testmuai/context.md).
+what Kane made of them is kept at
+[`.testmuai/context.md`](.testmuai/context.md).
 
 ### 2. The flow
 
@@ -264,7 +265,8 @@ SUBMISSION.md               the one-paragraph summary, the video shot list, the 
 flows/                      seven flow objectives, one per criterion group
 .testmuai/context.md        the PRD as the agent ingested it
 .testmuai/tests/            the test the agent designed
-.testmuai/results/          the agent's own result file for each run
+.testmuai/tests/output-*/   the agent's own result file for each run
+.testmuai/results/          the result files for the designed test
 .testmuai/evidence/         the sealed evidence packs
 measurements/               what the app's checker said at each commit
 public/runs.json            the ledger the app reads
