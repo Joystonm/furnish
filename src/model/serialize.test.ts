@@ -41,7 +41,7 @@ describe('toJSON', () => {
   it('writes an envelope with a format tag and the schema version', () => {
     const text = toJSON(populated());
     const payload = JSON.parse(text);
-    expect(payload.format).toBe('argon.project');
+    expect(payload.format).toBe('furnish.project');
     expect(payload.schemaVersion).toBe(SCHEMA_VERSION);
     expect(typeof payload.exportedAt).toBe('string');
     expect(payload.project.rooms).toHaveLength(1);
@@ -111,17 +111,31 @@ describe('fromJSON — rejects what it cannot trust', () => {
   it('refuses a foreign file format by name', () => {
     const r = fromJSON(JSON.stringify({ format: 'some.other.tool', project: {} }));
     expect(r.ok).toBe(false);
-    expect(r.error).toMatch(/argon\.project/);
+    expect(r.error).toMatch(/furnish\.project/);
+  });
+
+  it('still opens a project exported under the old name', () => {
+    // The rename must not invalidate files that already exist. The whole point
+    // of the export is that a project can be handed to someone else and opened
+    // later, possibly by a build that is called something else.
+    const project = populated();
+    const exported = JSON.parse(toJSON(project, false)) as Record<string, unknown>;
+    exported.format = 'argon.project';
+
+    const r = fromJSON(JSON.stringify(exported));
+    expect(r.error).toBeUndefined();
+    expect(r.ok).toBe(true);
+    expect(r.project?.name).toBe(project.name);
   });
 
   it('refuses a file saved by a newer build, and says so', () => {
-    const r = fromJSON(JSON.stringify({ format: 'argon.project', schemaVersion: SCHEMA_VERSION + 1, project: {} }));
+    const r = fromJSON(JSON.stringify({ format: 'furnish.project', schemaVersion: SCHEMA_VERSION + 1, project: {} }));
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/newer version/i);
   });
 
   it('refuses a file with no project body', () => {
-    const r = fromJSON(JSON.stringify({ format: 'argon.project', schemaVersion: SCHEMA_VERSION }));
+    const r = fromJSON(JSON.stringify({ format: 'furnish.project', schemaVersion: SCHEMA_VERSION }));
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/"project"/);
   });
@@ -129,7 +143,7 @@ describe('fromJSON — rejects what it cannot trust', () => {
   it('names every structural problem it found, not just the first', () => {
     const r = fromJSON(
       JSON.stringify({
-        format: 'argon.project',
+        format: 'furnish.project',
         schemaVersion: SCHEMA_VERSION,
         project: { id: 1, name: 'broken', plot: { width: 'wide' }, floors: 'not-an-array', rooms: {}, walls: 7 },
       }),

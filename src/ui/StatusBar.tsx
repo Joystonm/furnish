@@ -22,7 +22,7 @@ export function StatusBar({ measurements }: { measurements: BuildingMeasurements
   }, [project]);
 
   return (
-    <footer className="flex h-7 shrink-0 items-center gap-4 border-t border-line bg-surface px-3 text-[11px] text-inkSoft" data-testid="status-bar">
+    <footer className="flex h-9 shrink-0 items-center gap-4 border-t border-line bg-surface px-3.5 text-[11px] text-inkSoft shadow-[0_-1px_2px_rgba(15,23,42,0.04)]" data-testid="status-bar">
       <Stat label="Net indoor" value={formatArea(measurements.netIndoorArea, units)} testId="stat-net" />
       <Stat label="Footprint" value={formatArea(measurements.footprintArea, units)} testId="stat-footprint" />
       <Stat label="Gross covered" value={formatArea(measurements.grossCoveredArea, units)} testId="stat-gross" />
@@ -63,7 +63,7 @@ function Stat({ label, value, testId }: { label: string; value: string; testId?:
 }
 
 function Divider() {
-  return <span className="h-3.5 w-px bg-line" />;
+  return <span className="h-4 w-px bg-line" />;
 }
 
 /** Exported for the tests: the exact figures the status bar reports. */

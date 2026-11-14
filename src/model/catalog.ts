@@ -255,6 +255,59 @@ export const CATALOG: CatalogItem[] = [
 
 export const catalogById = new Map(CATALOG.map((c) => [c.id, c]));
 
+/**
+ * Catalogue pieces that hang on a wall, and the height above the floor at which
+ * they start.
+ *
+ * These are the only pieces whose plan footprint does not describe floor they
+ * stand on, and that is the whole reason the height band exists: a wall cabinet
+ * and a worktop share a metre and a half of the same wall without overlapping,
+ * because one is at 1.4 m and the other stops at 0.92 m. `furniture.ts` draws
+ * them at the height recorded here.
+ *
+ * It lives in the catalogue rather than in the code that places furniture
+ * because BOTH the furnisher and the validator need it, and they have to agree:
+ * a plan that places the cabinet legally and then warns about it is worse than
+ * one that never placed it.
+ */
+export const WALL_HUNG: Record<string, number> = {
+  'upper-cabinet': 1.4,
+};
+
+/** Anything this thin is meant to have other things standing on it — a rug. */
+export const FLAT_ENOUGH_TO_UNDERLIE = 0.05;
+
+export interface HeightBand {
+  /** Lowest point of the piece above the floor, metres. */
+  from: number;
+  /** Highest point, metres. */
+  to: number;
+  /** The piece's own height, which is what the flat rule keys off. */
+  height: number;
+}
+
+/** The band of space a catalogue piece actually occupies, floor to top. */
+export function itemBand(catalogId: string, height: number): HeightBand {
+  const hung = WALL_HUNG[catalogId];
+  return { from: hung ?? 0, to: hung === undefined ? height : hung + height, height };
+}
+
+/**
+ * Whether two pieces can share floor space.
+ *
+ * Either band missing the other's entirely — a cabinet over a worktop — and
+ * they clear. Either one flat enough to underlie — a rug, 2 cm — and they clear
+ * too, because rugs are meant to go under.
+ */
+export function bandsClear(a: HeightBand, b: HeightBand): boolean {
+  return (
+    a.height <= FLAT_ENOUGH_TO_UNDERLIE ||
+    b.height <= FLAT_ENOUGH_TO_UNDERLIE ||
+    a.to <= b.from + 1e-9 ||
+    b.to <= a.from + 1e-9
+  );
+}
+
 export function catalogFor(kinds: RoomKind[]): CatalogItem[] {
   return CATALOG.filter((c) => c.roomKinds.some((k) => kinds.includes(k)));
 }

@@ -49,7 +49,7 @@ test.describe('pointer lock is requested only on a live canvas', () => {
     page.on('pageerror', (e) => pageErrors.push(e.stack ? `${String(e)}\n${e.stack}` : String(e)));
     await instrument(page);
 
-    await page.goto('/');
+    await page.goto('/studio');
 
     // A plan is needed before there is anything to look at.
     await page.getByTestId('plot-width').fill('18');

@@ -25,8 +25,9 @@
  * non-axis-aligned wall splits into the right places instead of silently
  * producing one long box.
  */
-import type { Floor, FurnitureItem, OutdoorSpace, Project, Room, RoomKind, Staircase, Wall } from '../model/types.ts';
-import { furnitureParts } from './furniture.ts';
+import type { Floor, FurnitureItem, MaterialDef, Opening, OutdoorSpace, Project, Room, RoomKind, Staircase, Wall } from '../model/types.ts';
+import type { Footprint } from './collision.ts';
+import { furnitureParts, yawOffset } from './furniture.ts';
 
 export interface Box {
   /** Centre, in world metres. */
@@ -46,7 +47,7 @@ export interface Box {
   /**
    * What this is, so a click can map a mesh back to a model id.
    *
-   * `trim` and `frame` are the two purely-presentational kinds. They are kept
+   * `trim`, `frame`, `door` and `ceiling` are the purely-presentational kinds. They are kept
    * separate from `wall` and `glass` for a reason that is not cosmetic: the
    * test suite asserts *how many* wall and glass boxes a given model produces,
    * and a plinth that counted as wall would make those counts mean something
@@ -64,6 +65,8 @@ export interface Box {
     | 'railing'
     | 'roof'
     | 'glass'
+    | 'door'
+    | 'ceiling'
     | 'trim'
     | 'frame'
     | 'lawn'
@@ -88,8 +91,39 @@ export interface Box {
   rz?: number;
   /** Texture family — see `textures.ts`. Undefined means flat colour. */
   surface?: string;
+  /**
+   * The swinging door this box is part of.
+   *
+   * Every part of one leaf — panel, panel, handle — carries the same id, so the
+   * renderer can gather them into a single group that pivots about the hinge.
+   * Absent on everything that does not swing.
+   */
+  swingId?: string;
+  /**
+   * Position relative to the door's hinge, in the hinge's own frame.
+   *
+   * Set only on boxes with a `swingId`, and for rendering it *replaces*
+   * `x`/`z`/`ry`: the leaf is a child of a group that is already positioned and
+   * rotated, so a part drawn from its world coordinates would sit twice as far
+   * from the pivot as it should.
+   */
+  dx?: number;
+  dz?: number;
+  /** Height above the hinge's midpoint — the group origin. */
+  dy?: number;
   /** Render as glass: a physical material, not a tinted standard one. */
   glass?: boolean;
+  /**
+   * Rectangles of this surface the camera must not be given as floor.
+   *
+   * A slab that lies under a flight is one of them. `floorUnder` resolves ties
+   * by taking the *highest* surface at or below the feet, so a flat slab under
+   * a staircase does not lose to the staircase's ramp — it beats it, and the
+   * camera walks the length of the flight at a constant height, passing through
+   * the middle of it. The hole is in the *floor*, not in the picture: the slab
+   * is still drawn whole.
+   */
+  walkHoles?: Footprint[];
   /**
    * Excluded from walk-mode collision.
    *
@@ -99,6 +133,17 @@ export interface Box {
    * mean the camera is stopped by a pillow before it reaches the sofa.
    */
   noCollide?: boolean;
+  /**
+   * Kept out of the shadow map as a *receiver*.
+   *
+   * Set only on a surface with nothing above it: the roof deck. Nothing can cast
+   * onto a roof, so the only shadow it can ever take is its own — and a big flat
+   * plane shadowing itself at a shallow sun angle wears the classic acne moiré,
+   * which on the deck read as a dashed ladder of light marks ruled down the
+   * middle of the roof when seen from outside. It still *casts*, which is what
+   * puts the hard shadow line along the elevation under the eaves.
+   */
+  noReceiveShadow?: boolean;
 }
 
 export interface Collider {
@@ -106,6 +151,22 @@ export interface Collider {
   z: number;
   w: number;
   d: number;
+  /**
+   * The world height of the bottom and top of this collider.
+   *
+   * The collision test is circle-vs-rect on the XZ plane, but a box on the XZ
+   * plane is only meaningful if you also know how far up it reaches. Without
+   * these, the lintel over a front door — a wall box sitting at 2.1 m to 2.7 m,
+   * well above anybody's head — became an obstacle exactly as wide as the
+   * doorway and sealed it, so walking up the path led you to a blank wall where
+   * the door should be. The same applied to the wall above every window head.
+   *
+   * Optional so that a hand-built collider in a test keeps working; an absent
+   * height is treated as infinitely tall, which blocks rather than lets you
+   * through something of unknown extent.
+   */
+  y0?: number;
+  y1?: number;
   /**
    * The floor this collider belongs to.
    *
@@ -149,6 +210,40 @@ export interface SceneGeometry {
    * is drawn to it, so if the entrance moves the path moves with it.
    */
   entrance: { x: number; z: number; width: number } | null;
+  /** Door leaves that swing, grouped by `Box.swingId`. */
+  doors: SwingDoor[];
+}
+
+/**
+ * One door leaf, as a pivot plus the parts that rotate with it.
+ *
+ * The leaf is described in the hinge's own frame: `parts` are offsets from the
+ * hinge, not world positions, so the renderer can spin the whole group with one
+ * `rotation.y` and the panels and handle follow the leaf rather than floating
+ * off it. That is why the door is described here at all — as a flat box in
+ * `boxes` it has no hinge to turn about, and the parts would each have to be
+ * rotated and re-offset independently.
+ */
+export interface SwingDoor {
+  id: string;
+  floorId: string;
+  /** World position of the hinge post: the axis the leaf turns about. */
+  hinge: { x: number; y: number; z: number };
+  /** The leaf's own yaw in degrees — the wall's, when closed. */
+  ry: number;
+  /**
+   * Which way the leaf swings, as the sign to add to `ry` at full open.
+   *
+   * `Opening.swing` already says this ('negative'/'positive'), and honouring it
+   * matters for more than looks: a door that swings into a corridor across the
+   * path would hit the walker coming the other way.
+   */
+  swingSign: 1 | -1;
+  /** How far the leaf stands off the hinge, and how tall it is. */
+  width: number;
+  height: number;
+  /** Parts of the leaf, positioned relative to the hinge. */
+  parts: Box[];
 }
 
 /**
@@ -160,48 +255,167 @@ export interface SceneGeometry {
  * undifferentiated slab: the eye finds edges through value contrast, and there
  * was none to find. The rule now is that anything meeting anything else at a
  * corner differs by enough luminance to draw its own line.
+ *
+ * ── Toward the cool neutral scheme ───────────────────────────────────────────
+ * Roughly 20% of the saturation has come out of every value and each has been
+ * pulled a hair onto the cool side, which turns the terracotta cast into a
+ * greige. Two rules govern that, and the second is the one worth stating:
+ *
+ * 1. **The luminance is preserved exactly.** Nothing here was re-toned, only
+ *    de-chromaed, and the corner gaps the paragraph above promises were checked
+ *    afterwards and survive. Where a gap did narrow, the value that caused it
+ *    was nudged back rather than the gap being waved through.
+ * 2. **The materials are not recoloured, only desaturated.** Brick, oak,
+ *    plaster, limestone, wool, porcelain, cedar and walnut are physical
+ *    finishes with their own hues; a render that puts a teal tint on them reads
+ *    as fake. What changed is how much chroma they carry, not what they are.
  */
 const WALL_COLORS: Record<Wall['type'], string> = {
-  exterior: '#efe9dd',
-  interior: '#f6f2e9',
-  parapet: '#cfc7b6',
-  boundary: '#b9b2a3',
-  railing: '#8e8778',
+  exterior: '#ddd9cd',
+  interior: '#ebe8e0',
+  parapet: '#bdb6a5',
+  boundary: '#a49e90',
+  railing: '#6b675b',
 };
 
 /** Dark joinery. Windows are read by their frames far more than by their glass. */
-const FRAME_COLOR = '#5f574a';
-const DOOR_FRAME_COLOR = '#6b6154';
-const PLINTH_COLOR = '#a9a294';
-const ROOF_COLOR = '#84837e';
-const FASCIA_COLOR = '#8a8478';
-const LAWN_COLOR = '#a8b48f';
-const PAVING_COLOR = '#c6c0b2';
-const PATH_COLOR = '#d2ccbe';
+const FRAME_COLOR = '#48443e';
+const DOOR_FRAME_COLOR = '#544f45';
+/** A door with no material of its own — the catalogue's standard joinery timber. */
+const DOOR_LEAF_COLOR = '#76614d';
+const DOOR_HANDLE_COLOR = '#8c8a85';
+/** Plasterboard soffit thickness. Thin enough to read as a ceiling, thick enough to have an underside. */
+const CEILING_THICKNESS = 0.08;
+/** How far the ceiling hangs below the underside of the roof deck. See `roomSlab`. */
+const CEILING_DROP = 0.01;
+/**
+ * The base band, and the one value here that moved in *value* rather than only
+ * in chroma. Desaturating it left the plinth sitting closer to the lawn than
+ * the two had ever been, and those two meet at the bottom of every elevation.
+ * Taking a little light out of it puts the gap back wider than it started.
+ */
+const PLINTH_COLOR = '#867f74';
+const ROOF_COLOR = '#6b6c69';
+const FASCIA_COLOR = '#797267';
+/**
+ * The lawn, and the anchor every other piece of ground is derived from.
+ *
+ * Desaturated, but kept at its own yellow-green hue rather than pushed toward
+ * the new scheme's teal: grass in shade and grass in sun are the same colour,
+ * and the moment the two drift apart the building's cast shadow lands on two
+ * surfaces of visibly different hue, which reads as a grey slab laid over the
+ * site. The far ground plane in `Scene` and the hemisphere light's ground
+ * colour are both taken from this hue, deliberately within a few percent of
+ * each other.
+ */
+const LAWN_COLOR = '#829364';
+const PAVING_COLOR = '#b2aca0';
+const PATH_COLOR = '#bcb7aa';
 
+/**
+ * Floor colour by room kind.
+ *
+ * These were all within a few percent luminance of each other, which is why
+ * every ground-floor slab looked like the same beige rectangle: with a single
+ * flat colour and no texture to read, the eye has nothing but value to go on.
+ * They are now separated the way real floor finishes are — warm oak against
+ * cool limestone, pale bathroom tile against dark utility concrete — so a room
+ * is identifiable from its floor alone before any furniture is in it.
+ */
 const KIND_FLOORS: Record<string, string> = {
-  living: '#c9a87c',
-  dining: '#c9a87c',
-  kitchen: '#bfc4c6',
-  bedroom: '#c8ab88',
-  bathroom: '#cfd6d8',
-  guest: '#c8ab88',
-  office: '#c6b79c',
-  prayer: '#c6b79c',
-  storage: '#c4bfb6',
-  utility: '#c4bfb6',
-  pantry: '#c4bfb6',
-  corridor: '#c4bfb6',
-  hall: '#c4bfb6',
-  lobby: '#c4bfb6',
-  garage: '#b9b5ad',
-  balcony: '#b9ae97',
-  terrace: '#b9ae97',
+  living: '#bcb3a2',
+  dining: '#ad8961',
+  kitchen: '#babfbf',
+  bedroom: '#b08f69',
+  bathroom: '#d2d6d4',
+  guest: '#b08f69',
+  office: '#b08f69',
+  prayer: '#c5c1b7',
+  storage: '#a7a49d',
+  utility: '#a7a49d',
+  pantry: '#a7a49d',
+  corridor: '#bcb3a2',
+  hall: '#bcb3a2',
+  lobby: '#bcb3a2',
+  garage: '#9c9a94',
+  balcony: '#a49b8c',
+  terrace: '#a49b8c',
 };
 
-const DEFAULT_FLOOR_COLOR = '#c4bfb6';
-const GLASS_COLOR = '#a8ccdd';
-const TREAD_COLOR = '#b9ae97';
+const DEFAULT_FLOOR_COLOR = '#b3afa7';
+
+/**
+ * Material finish → procedural texture family.
+ *
+ * `MaterialDef.kind` says what a surface *is*; the painters in `textures.ts`
+ * are named after how it is drawn. Most of the names happen to line up, which
+ * is why this is a short table rather than a search.
+ */
+const SURFACE_FOR_KIND: Record<string, string | undefined> = {
+  plaster: 'plaster',
+  stone: 'stone',
+  concrete: 'concrete',
+  wood: 'oak',
+  tile: 'tile',
+  metal: 'metal',
+  paint: 'plaster',
+  // Glass is drawn by its own path with transparency and its own surface, and
+  // must never pick up an opaque grain.
+  glass: undefined,
+};
+
+/** What a surface should actually be rendered as. */
+interface Finish {
+  color: string;
+  roughness: number;
+  metalness: number;
+  surface?: string;
+}
+
+/**
+ * The finish for a wall: the material the project actually assigns it, falling
+ * back to the built-in colour for its type.
+ *
+ * This is the join between the material model and the renderer, and until it
+ * existed it was missing entirely — `sceneModel` read `wall.type` and nothing
+ * else, so applying a material to every exterior wall rewrote the model
+ * correctly, showed up in the undo history and the activity log, and changed
+ * not one pixel on screen. The palette the assistant picks has to land here
+ * or "render it" is not something the app can honestly claim to do.
+ */
+function wallFinish(materials: Record<string, MaterialDef>, wall: Wall): Finish {
+  const mat = wall.material ? materials[wall.material] : undefined;
+  if (!mat) {
+    return { color: WALL_COLORS[wall.type], roughness: 0.84, metalness: 0, surface: WALL_SURFACE[wall.type] };
+  }
+  return {
+    color: mat.color,
+    roughness: mat.roughness,
+    metalness: mat.metalness,
+    surface: SURFACE_FOR_KIND[mat.kind],
+  };
+}
+
+/** The same, for a room's floor finish. */
+function floorFinish(materials: Record<string, MaterialDef>, room: Room): Finish {
+  const mat = room.floorMaterial ? materials[room.floorMaterial] : undefined;
+  if (!mat) {
+    return {
+      color: KIND_FLOORS[room.kind] ?? DEFAULT_FLOOR_COLOR,
+      roughness: 0.86,
+      metalness: 0,
+      surface: FLOOR_SURFACE[room.kind],
+    };
+  }
+  return {
+    color: mat.color,
+    roughness: mat.roughness,
+    metalness: mat.metalness,
+    surface: SURFACE_FOR_KIND[mat.kind] ?? 'flat',
+  };
+}
+const GLASS_COLOR = '#abd0da';
+const TREAD_COLOR = '#b4ad9c';
 
 // ─────────────────────────────────────────────────────────── surfaces ────────
 /**
@@ -290,6 +504,28 @@ export const frameFor = (plotW: number, plotD: number): Frame => ({
   tz: (y) => y - plotD / 2,
 });
 
+/** Whether two world rectangles overlap at all. */
+function overlaps(a: Footprint, b: Footprint): boolean {
+  return Math.abs(a.x - b.x) < (a.w + b.w) / 2 && Math.abs(a.z - b.z) < (a.d + b.d) / 2;
+}
+
+/**
+ * The floor a flight stands on, in world elevation.
+ *
+ * `null` when the flight's own storey is not in the project. A flight ascends
+ * away from its `floorId` (`direction` +1) or descends out of it (−1), so the
+ * floor *underneath* the flight is its own storey in the first case and the one
+ * it connects to in the second. The arithmetic has to match `flightSurfaces`
+ * in `collision.ts` exactly — the ramp's height and the hole in the slab under
+ * it are two halves of the same fact.
+ */
+function flightUnder(stair: Staircase, floors: Floor[]): number | null {
+  const host = floors.find((x) => x.id === stair.floorId);
+  if (!host) return null;
+  const rise = stair.rise ?? host.height;
+  return stair.direction === 1 ? host.elevation : host.elevation - rise;
+}
+
 // ────────────────────────────────────────────────────────── wall junctions ───
 
 /** How close two endpoints have to be to count as the same junction, in metres. */
@@ -303,6 +539,8 @@ interface Corner {
   half: number;
   height: number;
   color: string;
+  roughness: number;
+  metalness: number;
   surface: string;
   /** True when the plinth band should be continued round the corner too. */
   plinth: boolean;
@@ -337,7 +575,12 @@ const samePoint = (a: { x: number; y: number }, b: { x: number; y: number }): bo
  * butt, their faces are back-to-back at the same plane, and neither is ever
  * drawn.
  */
-function resolveCorners(walls: Wall[], floor: Floor, out: Corner[]): Map<string, number> {
+function resolveCorners(
+  walls: Wall[],
+  floor: Floor,
+  materials: Record<string, MaterialDef>,
+  out: Corner[],
+): Map<string, number> {
   /** `${wallId}:a|b` → how far that end pulls back, in metres. */
   const trim = new Map<string, number>();
   /** Junction point → half-extent of the block that fills it. */
@@ -388,6 +631,18 @@ function resolveCorners(walls: Wall[], floor: Floor, out: Corner[]): Map<string,
           : Math.max(0.05, Math.max(w.thickness, thickest.thickness));
         half = thickness / 2;
         halfAt.set(key, half);
+        // The corner block takes the finish of the exterior wall it closes, so
+        // it does not stand out as a pale stripe at every junction in a brick
+        // or cedar facade. It used to be hardcoded to the render colour and the
+        // mismatch was invisible until a palette could change the walls.
+        const faceWall =
+          w.type === 'exterior'
+            ? w
+            : thickest.type === 'exterior'
+              ? thickest
+              : joined.find((o) => o.type === 'exterior') ?? w;
+        const cornerFinish = exterior ? wallFinish(materials, faceWall) : wallFinish(materials, w);
+
         out.push({
           x: p.x,
           y: p.y,
@@ -398,8 +653,10 @@ function resolveCorners(walls: Wall[], floor: Floor, out: Corner[]): Map<string,
             Math.max(0.1, w.height || floor.height),
             ...joined.map((o) => Math.max(0.1, o.height || floor.height)),
           ),
-          color: exterior ? WALL_COLORS.exterior : WALL_COLORS[w.type] ?? WALL_COLORS.interior,
-          surface: exterior ? WALL_SURFACE.exterior : WALL_SURFACE[w.type] ?? WALL_SURFACE.interior,
+          color: cornerFinish.color,
+          roughness: cornerFinish.roughness,
+          metalness: cornerFinish.metalness,
+          surface: cornerFinish.surface ?? 'flat',
           plinth: floor.order === 0 && (w.type === 'exterior' || joined.some((o) => o.type === 'exterior')),
           plinthHalf: half + PLINTH_PROUD,
           floorId: floor.id,
@@ -419,7 +676,15 @@ function resolveCorners(walls: Wall[], floor: Floor, out: Corner[]): Map<string,
  * heights above the storey datum. Both axes are transformed with the wall's
  * own direction vector, so the split is correct for any wall orientation.
  */
-function wallBoxes(wall: Wall, f: Frame, floor: Floor, trims: Map<string, number>, out: Box[]): void {
+function wallBoxes(
+  wall: Wall,
+  f: Frame,
+  floor: Floor,
+  trims: Map<string, number>,
+  materials: Record<string, MaterialDef>,
+  out: Box[],
+  swingDoors: SwingDoor[],
+): void {
   const dx = wall.b.x - wall.a.x;
   const dy = wall.b.y - wall.a.y;
   const len = Math.hypot(dx, dy);
@@ -431,6 +696,10 @@ function wallBoxes(wall: Wall, f: Frame, floor: Floor, trims: Map<string, number
   const height = Math.max(0.1, wall.height || floor.height);
   const baseY = floor.elevation;
   const ry = (Math.atan2(dy, dx) * 180) / Math.PI;
+
+  // Resolved once per wall, not per box: every panel of this wall wears the
+  // same finish, and the joinery and glass below it deliberately do not.
+  const finish = wallFinish(materials, wall);
 
   /**
    * A box spanning [s0,s1] along the wall and [y0,y1] in height.
@@ -450,7 +719,7 @@ function wallBoxes(wall: Wall, f: Frame, floor: Floor, trims: Map<string, number
   ) => {
     const ds = s1 - s0;
     const dyh = y1 - y0;
-    if (ds < 1e-4 || dyh < 1e-4) return;
+    if (ds < 1e-4 || dyh < 1e-4) return undefined;
     const sm = (s0 + s1) / 2;
     const cx = wall.a.x + ux * sm;
     const cy = wall.a.y + uy * sm;
@@ -463,15 +732,22 @@ function wallBoxes(wall: Wall, f: Frame, floor: Floor, trims: Map<string, number
       d: opts.depth ?? thickness,
       ry,
       color,
-      roughness: opts.roughness ?? 0.92,
-      metalness: opts.metalness ?? 0,
+      // Falls back to the wall's own finish rather than to a flat 0.84, so a
+      // material that says "polished concrete" or "oak" is honoured. 0.84 rather
+      // than the 0.92 this used to default to: at 0.92 a wall is so close to a
+      // perfect lambertian that image-based lighting collapses to a single flat
+      // term per pixel and the surface reads as painted cardboard no matter how
+      // good the normal map is.
+      roughness: opts.roughness ?? finish.roughness,
+      metalness: opts.metalness ?? finish.metalness,
       opacity: opts.opacity ?? 1,
       kind,
       ownerId: wall.id,
       floorId: wall.floorId,
-      surface: opts.surface ?? WALL_SURFACE[wall.type],
+      surface: opts.surface ?? finish.surface,
       glass: opts.glass,
     });
+    return out[out.length - 1];
   };
 
   if (wall.type === 'railing' || wall.type === 'boundary') {
@@ -479,7 +755,7 @@ function wallBoxes(wall: Wall, f: Frame, floor: Floor, trims: Map<string, number
     return;
   }
 
-  const color = WALL_COLORS[wall.type];
+  const color = finish.color;
   const openings = [...wall.openings].sort((a, b) => a.offset - b.offset);
   // A plinth is a base band, so it belongs to the storey that sits on the
   // ground and to nothing above it. It also runs a little proud of the wall,
@@ -526,6 +802,117 @@ function wallBoxes(wall: Wall, f: Frame, floor: Floor, trims: Map<string, number
     }
   };
 
+  /**
+   * A door leaf, its two recessed panels, and a handle.
+   *
+   * Without this a door is a frame round a hole, and a hole is the most
+   * model-like thing a house can have on its elevation — the eye knows
+   * instantly there is nothing behind it. The leaf is thinner than the wall and
+   * centred on it, so it sits recessed a little on both faces and picks up a
+   * shadow line all the way round.
+   */
+  const doorLeaf = (o: Opening, start: number, end: number, y0: number, y1: number, fw: number) => {
+    const leafStart = start + fw;
+    const leafEnd = end - fw;
+    const leafTop = y1 - fw;
+    const leafBase = y0 + 0.015;
+    if (leafEnd - leafStart < 0.2 || leafTop - leafBase < 0.6) return;
+
+    // The opening's own material wins if it has one; otherwise the catalogue's
+    // standard door. Panels keep the leaf's colour — they are the same timber,
+    // set back a couple of centimetres.
+    const mat = o.material ? materials[o.material] : undefined;
+    const leafColor = mat?.color ?? DOOR_LEAF_COLOR;
+    const leafDepth = thickness * 0.52;
+    const leafSurface = mat ? (SURFACE_FOR_KIND[mat.kind] ?? 'oak') : 'oak';
+
+    const swingId = `${wall.id}:${o.id}`;
+    // Everything below is one rigid leaf, so each `push` is recorded and the
+    // whole set is registered as a single swinging door.
+    const parts: Box[] = [];
+    const part = (b: Box | undefined) => {
+      if (!b) return;
+      b.swingId = swingId;
+      parts.push(b);
+    };
+
+    part(push(leafStart, leafEnd, leafBase, leafTop, 'door', leafColor, {
+      depth: leafDepth,
+      roughness: mat?.roughness ?? 0.6,
+      metalness: mat?.metalness ?? 0,
+      surface: leafSurface,
+    }));
+
+    // Two recessed panels. Without them a door is a slab the same colour as the
+    // frame beside it, and joins into one flat shape at any real viewing distance.
+    const inset = 0.085;
+    const pa = leafStart + inset;
+    const pb = leafEnd - inset;
+    const bottom = y0 + 0.16;
+    const rail = y0 + (leafTop - y0) * 0.38;
+    part(push(pa, pb, bottom, rail - 0.05, 'door', leafColor, {
+      depth: leafDepth - 0.022,
+      roughness: mat?.roughness ?? 0.6,
+      surface: leafSurface,
+    }));
+    part(push(pa, pb, rail + 0.05, leafTop - inset, 'door', leafColor, {
+      depth: leafDepth - 0.022,
+      roughness: mat?.roughness ?? 0.6,
+      surface: leafSurface,
+    }));
+
+    // Lever handle on the latch side — the `hinge` field says which end that is,
+    // and doors without one are drawn latched toward the far end.
+    const latchEnd = o.hinge === 'start' ? leafEnd : leafStart;
+    const hx = latchEnd === leafEnd ? leafEnd - 0.16 : leafStart + 0.11;
+    part(push(hx, hx + 0.05, 1.02, 1.14, 'door', DOOR_HANDLE_COLOR, {
+      depth: leafDepth + 0.06,
+      roughness: 0.3,
+      metalness: 0.85,
+      surface: 'metal',
+    }));
+
+    // Re-express every part relative to the hinge, and undo the wall's own yaw
+    // so the leaf is stored square in its hinge's frame.
+    //
+    // Without the second step the group would be spun twice — once by the
+    // group's `ry`, once by each part's own — and every door would open at an
+    // angle unrelated to the wall it sits in. Storing the parts square and
+    // putting the wall's yaw on the group means one rotation drives the lot.
+    const hingeS = o.hinge === 'start' ? leafStart : leafEnd;
+    const hingeW = {
+      x: f.tx(wall.a.x + ux * hingeS),
+      z: f.tz(wall.a.y + uy * hingeS),
+    };
+    const cos = Math.cos((-ry * Math.PI) / 180);
+    const sin = Math.sin((-ry * Math.PI) / 180);
+    const hingeY = baseY + (leafBase + leafTop) / 2;
+    for (const p of parts) {
+      const ox = p.x - hingeW.x;
+      const oz = p.z - hingeW.z;
+      p.dx = ox * cos + oz * sin;
+      p.dz = -ox * sin + oz * cos;
+      p.dy = p.y - hingeY;
+      p.ry = 0;
+    }
+
+    swingDoors.push({
+      id: swingId,
+      floorId: wall.floorId,
+      // Half the leaf's height up from its foot, so the group origin is the
+      // middle of the hinge line rather than the floor it stands on.
+      hinge: { x: hingeW.x, y: hingeY, z: hingeW.z },
+      ry,
+      // `Opening.swing` already says which way it opens, and following it
+      // matters for more than looks: a door swinging the wrong way sweeps the
+      // path of whoever is walking the other way.
+      swingSign: o.swing === 'negative' ? 1 : -1,
+      width: leafEnd - leafStart,
+      height: leafTop - leafBase,
+      parts,
+    });
+  };
+
   if (!openings.length) {
     piece(s0(0), s1(len), 0, height);
     pushPlinth(p0(0), p1(len), height);
@@ -567,7 +954,12 @@ function wallBoxes(wall: Wall, f: Frame, floor: Floor, trims: Map<string, number
     const fw = 0.055;
     const y0 = o.kind === 'window' ? o.sill : 0;
     const y1 = Math.min(o.sill + o.height, height);
+    // A leaf is only for a real door. `opening` and `doorway` are cased openings —
+    // a living room opening into its kitchen is 1.5 m of nothing by design, and
+    // hanging a leaf across it would put a swinging slab in the middle of the
+    // living space. They still get a frame, so the opening reads as joinery.
     const isDoor = o.kind !== 'window';
+    const hasLeaf = o.kind === 'door';
 
     // Jambs, set just inside the reveal so they do not narrow the clear opening
     // by their own width on top of the wall that already does.
@@ -587,6 +979,8 @@ function wallBoxes(wall: Wall, f: Frame, floor: Floor, trims: Map<string, number
 
     if (o.kind === 'window') push(start, end, o.sill, y1, 'glass', GLASS_COLOR, { opacity: 0.3, roughness: 0.05, metalness: 0.1, glass: true, surface: undefined });
 
+    if (hasLeaf) doorLeaf(o, start, end, y0, y1, fw);
+
     cursor = Math.max(cursor, end);
   }
   if (cursor < len) {
@@ -595,7 +989,21 @@ function wallBoxes(wall: Wall, f: Frame, floor: Floor, trims: Map<string, number
   }
 }
 
-function roomSlab(room: Room, f: Frame, floor: Floor, thickness: number, out: Box[]): void {
+function roomSlab(
+  room: Room,
+  f: Frame,
+  floor: Floor,
+  thickness: number,
+  materials: Record<string, MaterialDef>,
+  out: Box[],
+  showCeiling: boolean,
+  holes: Footprint[],
+): void {
+  // The floor finish the project assigns, not a colour keyed off the room's
+  // kind — see `floorFinish`. `apply_material` with target `floor` has always
+  // been able to rewrite every `floorMaterial`; until this lookup existed that
+  // edit was invisible.
+  const finish = floorFinish(materials, room);
   out.push({
     x: f.tx(room.x + room.width / 2),
     y: floor.elevation - thickness / 2,
@@ -604,22 +1012,84 @@ function roomSlab(room: Room, f: Frame, floor: Floor, thickness: number, out: Bo
     h: thickness,
     d: room.depth,
     ry: 0,
-    color: KIND_FLOORS[room.kind] ?? DEFAULT_FLOOR_COLOR,
-    roughness: 0.86,
-    metalness: 0,
+    color: finish.color,
+    roughness: finish.roughness,
+    metalness: finish.metalness,
     opacity: 1,
     kind: 'room-slab',
     ownerId: room.id,
     floorId: room.floorId,
-    surface: FLOOR_SURFACE[room.kind] ?? 'flat',
+    surface: finish.surface,
+    // Only the holes that actually fall in this room's rectangle. The stairwell
+    // is the room that has one; the rooms beside it are told nothing.
+    walkHoles: holes.filter((h) => overlaps(h, { x: f.tx(room.x + room.width / 2), z: f.tz(room.y + room.depth / 2), w: room.width, d: room.depth })),
+  });
+
+  if (!showCeiling) return;
+
+  // The ceiling. Until this existed the only thing overhead was the underside of
+  // the roof deck — a mottled grey slab reading as a lid, which is most of why
+  // standing inside the house felt like standing inside a model of one. A real
+  // room is closed at the top by white plaster, and that bounce is half of what
+  // makes an interior feel lit rather than spotlit.
+  //
+  // It reuses `interior.plaster` so a palette that warms the internal walls
+  // warms the ceilings with them. It overlaps the room rectangle by half a
+  // typical wall so it meets the wall face with no hairline gap at the junction.
+  const plaster = materials['interior.plaster'];
+  const overhang = 0.15;
+  // Dropped a centimetre clear of `floor.elevation + floor.height`, which is
+  // exactly where the roof soffit starts. Flush, the two coplanar faces fight
+  // for the depth buffer and the roof wears a stripe of ceiling texture across
+  // it — visible from outside as a ladder of light seams down the whole roof.
+  const drop = CEILING_DROP;
+  out.push({
+    x: f.tx(room.x + room.width / 2),
+    y: floor.elevation + floor.height - drop - CEILING_THICKNESS / 2,
+    z: f.tz(room.y + room.depth / 2),
+    w: room.width + overhang,
+    h: CEILING_THICKNESS,
+    d: room.depth + overhang,
+    ry: 0,
+    color: plaster?.color ?? '#f1f2f1',
+    roughness: plaster?.roughness ?? 0.95,
+    metalness: 0,
+    opacity: 1,
+    kind: 'ceiling',
+    ownerId: room.id,
+    floorId: room.floorId,
+    surface: 'plaster',
   });
 }
 
 /**
- * Stairs as discrete treads over a solid core.
+ * A flight as a run of solid steps with a balustrade either side.
  *
- * Real treads rather than a ramp: the count is what tells you the flight is
- * climbable at a believable slope, and the model is what the validator checks.
+ * **Each step is a full-height solid, not a tread floating over a core.** The
+ * first version drew 0.05 m treads spaced a riser apart over one big block, and
+ * that had two faults that shared a cause. It looked wrong, because you could
+ * see between every pair of treads and the flight read as a stack of loose
+ * slats. And it walked wrong for the same reason, because the camera's floor
+ * came from those tread boxes: it climbed a row of thin, see-through slabs with
+ * the block's flat top 2.5 m above them.
+ *
+ * Making each step a solid that runs from the nosing below it up to its own
+ * closes the flight. Consecutive steps overlap by the nosing oversail, so there
+ * is no gap in plan either.
+ *
+ * None of these boxes is walked on. The camera's floor for a flight is a ramp
+ * built from the staircase itself — see `flightSurfaces` in `collision.ts` — so
+ * this function is free to draw what reads as a staircase rather than what
+ * happens to line up with a collision query, which is the trap the first version
+ * fell into. What is left here is the picture.
+ *
+ * The balustrade is a panel and a cap stepped one per tread, because the box
+ * primitive carries yaw and no pitch: a single raked rail cannot be expressed,
+ * and a flight with no handrail at all reads as unfinished. Railings are neither
+ * colliders nor walkable surfaces, so drawing them disturbs nothing else.
+ *
+ * The step count is still the real one. It is what tells you the flight is
+ * climbable at a believable slope, and it is what the validator checks.
  */
 function stairBoxes(stair: Staircase, f: Frame, floor: Floor, out: Box[]): void {
   const rise = stair.rise ?? floor.height;
@@ -631,18 +1101,30 @@ function stairBoxes(stair: Staircase, f: Frame, floor: Floor, out: Box[]): void 
   // of it. An ascending flight therefore starts *on* this floor, and only a
   // descending one starts below it.
   const baseY = stair.direction === 1 ? floor.elevation : floor.elevation - rise;
-  const tread = 0.05;
   const startPlanY = stair.y - stair.run / 2;
+  /** How far each nosing oversails the step below it. */
+  const nosing = 0.03;
+  /** Handrail height above the nosing line. */
+  const rail = 0.92;
+  const post = 0.06;
+  const cap = 0.11;
+  const railColor = '#8b8479';
 
   for (let i = 0; i < count; i++) {
     const along = stair.direction === 1 ? (i + 0.5) * going : stair.run - (i + 0.5) * going;
+    const top = baseY + (i + 1) * riser;
+    const z = f.tz(startPlanY + along);
+    const d = going + nosing;
+    const cx = f.tx(stair.x);
+
+    // The solid step, from the nosing below it up to this one.
     out.push({
-      x: f.tx(stair.x),
-      y: baseY + (i + 1) * riser - tread / 2,
-      z: f.tz(startPlanY + along),
+      x: cx,
+      y: top - riser / 2,
+      z,
       w: stair.width,
-      h: tread,
-      d: going,
+      h: riser,
+      d,
       ry: 0,
       color: TREAD_COLOR,
       roughness: 0.85,
@@ -653,25 +1135,45 @@ function stairBoxes(stair: Staircase, f: Frame, floor: Floor, out: Box[]): void 
       floorId: stair.floorId,
       surface: 'oak',
     });
-  }
 
-  out.push({
-    x: f.tx(stair.x),
-    y: baseY + rise / 2 - 0.08,
-    z: f.tz(stair.y),
-    w: stair.width * 0.9,
-    h: Math.max(0.1, rise - 0.1),
-    d: stair.run,
-    ry: 0,
-    color: '#a89d88',
-    roughness: 0.95,
-    metalness: 0,
-    opacity: 1,
-    kind: 'stair',
-    ownerId: stair.id,
-    floorId: stair.floorId,
-    surface: 'render',
-  });
+    // Balustrade both sides: a panel standing on each nosing, and a cap on it.
+    for (const side of [-1, 1]) {
+      out.push({
+        x: cx + side * (stair.width / 2 - post / 2),
+        y: top + rail / 2,
+        z,
+        w: post,
+        h: rail,
+        d,
+        ry: 0,
+        color: railColor,
+        roughness: 0.5,
+        metalness: 0.4,
+        opacity: 1,
+        kind: 'railing',
+        ownerId: stair.id,
+        floorId: stair.floorId,
+        surface: 'metal',
+      });
+      out.push({
+        x: cx + side * (stair.width / 2 - cap / 2),
+        y: top + rail + 0.025,
+        z,
+        w: cap,
+        h: 0.05,
+        d,
+        ry: 0,
+        color: railColor,
+        roughness: 0.5,
+        metalness: 0.4,
+        opacity: 1,
+        kind: 'railing',
+        ownerId: stair.id,
+        floorId: stair.floorId,
+        surface: 'metal',
+      });
+    }
+  }
 }
 
 /**
@@ -685,13 +1187,10 @@ function stairBoxes(stair: Staircase, f: Frame, floor: Floor, out: Box[]): void 
  * more to the part itself as its yaw.
  */
 function furnitureBoxes(item: FurnitureItem, f: Frame, floor: Floor, out: Box[]): void {
-  const rad = (item.rotation * Math.PI) / 180;
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-
   for (const p of furnitureParts(item)) {
-    const px = p.x * cos + p.z * sin;
-    const pz = -p.x * sin + p.z * cos;
+    const off = yawOffset(p, item.rotation);
+    const px = off.x;
+    const pz = off.y;
     const solid = p.solid && p.h > 0.03;
     out.push({
       x: f.tx(item.x + px),
@@ -761,7 +1260,7 @@ function outdoorBoxes(o: OutdoorSpace, f: Frame, floor: Floor, out: Box[]): void
       h,
       d: rd,
       ry: 0,
-      color: '#8d8577',
+      color: '#8b8479',
       roughness: 0.5,
       metalness: 0.4,
       opacity: 1,
@@ -828,6 +1327,7 @@ function roofBoxes(rooms: Room[], walls: Wall[], f: Frame, floor: Floor, out: Bo
     kind: 'roof',
     floorId: floor.id,
     surface: 'roof',
+    noReceiveShadow: true,
   });
 
   const halfW = w / 2;
@@ -901,8 +1401,8 @@ function cornerBoxes(corners: Corner[], f: Frame, out: Box[]): void {
           d: full,
           ry: 0,
           color: c.color,
-          roughness: 0.92,
-          metalness: 0,
+          roughness: c.roughness,
+          metalness: c.metalness,
           opacity: 1,
           kind: 'trim',
           floorId: c.floorId,
@@ -920,8 +1420,8 @@ function cornerBoxes(corners: Corner[], f: Frame, out: Box[]): void {
       d: full,
       ry: 0,
       color: c.color,
-      roughness: 0.92,
-      metalness: 0,
+      roughness: c.roughness,
+      metalness: c.metalness,
       opacity: 1,
       kind: 'trim',
       floorId: c.floorId,
@@ -936,12 +1436,48 @@ export interface BuildOptions {
   showRoof?: boolean;
   showFurniture?: boolean;
   showGround?: boolean;
+  /**
+   * Whether to hang a ceiling under each room. Defaults to `showRoof`, because
+   * a ceiling and the roof above it come off together: take the lid off to see
+   * into the plan from outside and you want to see the furniture, not the top
+   * of a plasterboard soffit.
+   */
+  showCeiling?: boolean;
+}
+
+/**
+ * The world footprint of a box that is turned on the floor.
+ *
+ * A box's `w` and `d` are its own extents along its local axes, and `ry` is
+ * its heading in degrees. A wall that runs north–south is built as a long box
+ * on its side: `w` is its length, `d` its thickness, `ry` a quarter turn. So
+ * taking `w` and `d` as the world extent turns every such wall sideways — the
+ * stairwell's west wall, 0.1 m thick and 1.5 m long, was given a collider
+ * 1.5 m wide and 0.1 m deep, and the camera could not walk past a wall that
+ * was not there. The same turned a quarter-turned dining table into a
+ * rectangle 0.9 m too wide, which reached through the wall and blocked the
+ * stairwell door.
+ *
+ * What is wanted is the axis-aligned bounds of the turned rectangle, which is
+ * exact for the quarter turns the model actually uses and a snug enclosure
+ * for anything else.
+ */
+export function worldFootprint(w: number, d: number, ry: number): { w: number; d: number } {
+  const t = (ry * Math.PI) / 180;
+  const c = Math.abs(Math.cos(t));
+  const s = Math.abs(Math.sin(t));
+  return { w: w * c + d * s, d: w * s + d * c };
 }
 
 export function buildScene(project: Project, options: BuildOptions = {}): SceneGeometry {
   const { showRoof = true, showFurniture = true, showGround = true } = options;
+  const showCeiling = options.showCeiling ?? showRoof;
   const f = frameFor(project.plot.width, project.plot.depth);
   const boxes: Box[] = [];
+  // Accumulated across every floor: a door on the first storey swings just as
+  // much as one on the second, and the walk camera only ever sees the storey it
+  // is standing on.
+  const swingDoors: SwingDoor[] = [];
 
   const allFloors = project.floors.slice().sort((a, b) => a.order - b.order);
   const topFloor = allFloors[allFloors.length - 1];
@@ -974,10 +1510,27 @@ export function buildScene(project: Project, options: BuildOptions = {}): SceneG
     }
 
     const corners: Corner[] = [];
-    const trims = resolveCorners(walls, floor, corners);
+    const trims = resolveCorners(walls, floor, project.materials ?? {}, corners);
 
-    for (const r of rooms) roomSlab(r, f, floor, 0.2, boxes);
-    for (const w of walls) wallBoxes(w, f, floor, trims, boxes);
+    // The slab a flight stands on has to be holed where the flight is.
+    //
+    // The ground paving is holed for exactly this reason (`groundSurfaces` in
+    // `collision.ts`): an unbroken plane at the ground level passes under every
+    // flight, and `floorUnder` takes the *highest* surface at or below the feet,
+    // so the flat plane does not lose to the ramp — it beats it, and the camera
+    // walks the length of the staircase at a constant height. The same is true of
+    // the room slab under the stairwell, and it is the one that matters here:
+    // the stairwell is a room, so it has a floor, and that floor lies under the
+    // flight.
+    const flightHoles: Footprint[] = [];
+    for (const s of project.stairs) {
+      const under = flightUnder(s, project.floors);
+      if (under === null || Math.abs(under - floor.elevation) > 1e-6) continue;
+      flightHoles.push({ x: f.tx(s.x), z: f.tz(s.y), w: s.width, d: s.run });
+    }
+
+    for (const r of rooms) roomSlab(r, f, floor, 0.2, project.materials ?? {}, boxes, showCeiling, flightHoles);
+    for (const w of walls) wallBoxes(w, f, floor, trims, project.materials ?? {}, boxes, swingDoors);
     cornerBoxes(corners, f, boxes);
     for (const s of project.stairs.filter((x) => x.floorId === floor.id)) stairBoxes(s, f, floor, boxes);
     for (const o of project.outdoor.filter((x) => x.floorId === floor.id)) outdoorBoxes(o, f, floor, boxes);
@@ -995,7 +1548,10 @@ export function buildScene(project: Project, options: BuildOptions = {}): SceneG
   // they join, so the walls themselves already block that square of floor.
   const colliders = boxes
     .filter((b) => (b.kind === 'wall' || b.kind === 'furniture' || b.kind === 'glass') && !b.noCollide)
-    .map((b) => ({ x: b.x, z: b.z, w: b.w, d: b.d, floorId: b.floorId }));
+    .map((b) => {
+      const fp = worldFootprint(b.w, b.d, b.ry);
+      return { x: b.x, z: b.z, w: fp.w, d: fp.d, y0: b.y - b.h / 2, y1: b.y + b.h / 2, floorId: b.floorId };
+    });
 
   const building = buildingExtent(boxes);
   const entrance = findEntrance(project, f);
@@ -1007,6 +1563,7 @@ export function buildScene(project: Project, options: BuildOptions = {}): SceneG
   return {
     boxes,
     colliders,
+    doors: swingDoors,
     bounds: { width: project.plot.width, depth: project.plot.depth, height: maxY },
     building,
     entrance,

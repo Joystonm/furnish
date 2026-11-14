@@ -1,10 +1,10 @@
 {
-  "name": "argon",
+  "name": "furnish",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "license": "MIT",
-  "description": "Argon \u2014 AI Home Design Studio. One canonical architectural model driving a 2D plan editor, a synchronized 3D building, deterministic measurement/validation, and a MiniMax M3 design assistant.",
+  "description": "Furnish \u2014 AI Home Design Studio. One canonical architectural model driving a 2D plan editor, a synchronized 3D building, deterministic measurement/validation, and a MiniMax M3 design assistant.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

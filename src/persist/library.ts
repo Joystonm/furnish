@@ -12,6 +12,17 @@
  */
 import { SCHEMA_VERSION, type Id, type Project } from '../model/types.ts';
 
+/**
+ * The IndexedDB database name.
+ *
+ * Still `argon`, the name the product had before the rename, and it should stay
+ * that way. Renaming it would point every existing install at an empty database:
+ * the library would come up blank, the backup note in the README would be a lie,
+ * and nothing on screen would say why. Unlike the export format — which is
+ * user-visible and so was updated — this is a private storage key the user never
+ * sees, so there is nothing to gain by changing it and someone's saved projects
+ * to lose. The cost is one stale identifier in a private constant.
+ */
 const DB_NAME = 'argon';
 const DB_VERSION = 1;
 const STORE_PROJECTS = 'projects';

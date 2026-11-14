@@ -1,5 +1,5 @@
 /**
- * The canonical Argon architectural model.
+ * The canonical Furnish architectural model.
  *
  * ONE model is the source of truth for the 2D plan, the 3D building, every
  * measurement, every validation issue, the AI tool surface, and save/load.
@@ -189,6 +189,13 @@ export interface Room {
   floorMaterial?: string;
   /** Assigned by the generator / validation to mark the way in from outside. */
   isEntrance?: boolean;
+  /**
+   * The name this room carried as a brief spec, carried onto the room so the
+   * generator can check afterwards whether the adjacency it asked for was
+   * actually built. NOT an id — `id` above is the only thing that identifies a
+   * room, and it is minted by `newId`. Never address a room by this.
+   */
+  ref?: string;
 }
 
 // ─────────────────────────────────────────────────────────────── stairs ───────
@@ -201,12 +208,19 @@ export interface Staircase {
   x: number;
   y: number;
   width: number;
-  /** Total run in metres along +Y (down) from the top landing. */
+  /** Total run in metres along +Y (down). See `stairBoxes`, which draws it. */
   run: number;
   riserCount: number;
   /** Storey height the flight climbs, in metres. Derived from the floors. */
   rise?: number;
-  /** -1 descends from this floor, +1 ascends to it. */
+  /**
+   * Which way the flight goes. +1 ascends *away* from this floor and arrives at
+   * `connectsToFloorId`; −1 descends out of it.
+   *
+   * (This said "+1 ascends to it", which reads as the opposite and is not what
+   * any code does. `stairBoxes` and `openStairEnds` both put the first tread at
+   * `y − run / 2` for a +1 flight, so the near end is the foot.)
+   */
   direction: -1 | 1;
   /** The floor this stair arrives at / departs from. */
   connectsToFloorId: Id | null;
@@ -442,6 +456,39 @@ export interface HistoryEntry {
 
 // ───────────────────────────────────────────────────────────────── project ────
 
+/**
+ * Where the current layout came from, and — the part that matters — whether a
+ * model chose it.
+ *
+ * This is persisted on the project rather than shown once in a toast, because
+ * it outlives the toast. A user who saves, closes and reopens Furnish must still
+ * be able to tell whether the plan in front of them was designed or is the
+ * catalogue's default sizes lined up in a row. `plannedBy: 'defaults'` is not
+ * a defect: it is a true statement about a plan that is perfectly fine to use
+ * and perfectly wrong to attribute to a designer.
+ */
+export interface DesignProvenance {
+  /**
+   * `model` — MiniMax chose the room program and the packer placed it.
+   * `defaults` — the brief's own room list, laid out by the packer alone.
+   * `grid` / `empty` — the two blank starts, which asked for no design.
+   */
+  plannedBy: 'model' | 'defaults' | 'grid' | 'empty';
+  /** The model's one-line account of the design. Present when `plannedBy` is 'model'. */
+  summary?: string;
+  /** The named cause when `plannedBy` is not 'model' — why the fallback ran. */
+  reason?: string;
+  /**
+   * What happened to the program on the way in: a field repaired, a constraint
+   * dropped, an area clamped. Kept on the project rather than only in a toast,
+   * because a warning that outlives the notification is the difference between
+   * a user who knows their plan was adjusted and one who does not.
+   */
+  warnings?: string[];
+  /** Epoch milliseconds when this was decided. */
+  at: number;
+}
+
 export interface Project {
   schemaVersion: number;
   id: Id;
@@ -451,6 +498,12 @@ export interface Project {
   /** Display units. Geometry is always metres. */
   displayUnits: 'm' | 'ft';
   brief: DesignBrief | null;
+  /**
+   * Who chose the rooms in this project. Optional because projects saved
+   * before this field existed simply lack it, and because a project the user
+   * has edited by hand has no single origin worth claiming.
+   */
+  provenance?: DesignProvenance;
   plot: Plot;
   floors: Floor[];
   rooms: Room[];

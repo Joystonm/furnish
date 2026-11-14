@@ -49,20 +49,66 @@ export interface Part {
   solid: boolean;
 }
 
-// ───────────────────────────────────────────────────────────────── palette ────
+// ──────────────────────────────────────────────────────────────── the yaw ─────
 
-const WOOD = '#8a6a45';
-const DARK_WOOD = '#6b4f34';
-const PALE_WOOD = '#c2a67c';
-const FABRIC = '#9d9a92';
-const LINEN = '#e8e4da';
-const WHITE = '#f0efec';
-const STEEL = '#b9bdc1';
-const DARK = '#3c3a37';
+/**
+ * A point in an item's own frame, yawed into the plan.
+ *
+ * This is the one place the rotation convention is written down, because two
+ * places need it: `buildScene` places the assembly, and the plan has to know
+ * which way a piece faces in order to put the coffee table in front of the
+ * sofa rather than behind it. Written out twice it drifts, and the drift is
+ * invisible until a bed is photographed standing in the middle of a room with
+ * its headboard facing away from the wall.
+ *
+ * `rotation` is the plan rotation in degrees; the result is an offset in plan
+ * axes, where +y is south — the same axes the item's own x/y are stored in.
+ */
+export function yawOffset(p: { x: number; z: number }, rotation: number): { x: number; y: number } {
+  const rad = (rotation * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  return { x: p.x * cos + p.z * sin, y: -p.x * sin + p.z * cos };
+}
+
+/**
+ * Which way the item's BACK points, in plan axes (+y is south).
+ *
+ * Every assembly here is modelled with its back at local -Z — the sofa's
+ * backrest, the bed's headboard, the wardrobe's doors are all on that side —
+ * so this is the direction that has to end up at the wall.
+ */
+export function backBearing(rotation: number): { x: number; y: number } {
+  return yawOffset({ x: 0, z: -1 }, rotation);
+}
+
+// ───────────────────────────────────────────────────────────────── palette ────
+//
+// About 20% of the saturation has come out of every value, and each has been
+// nudged a hair toward the cool side. The materials are not recoloured: a sofa
+// is still made of cloth and a table of oak, and a render that put a teal tint
+// on them would read as fake. What changed is the amount of chroma each one
+// carries, and every value kept the luminance it had — the differences between
+// a carcass and its cushions, a leg and a top, a leaf and its stem are exactly
+// as legible as they were.
+//
+// Reds are the one family with nowhere cooler to go: there is no hue between
+// crimson and slate that is not either still red or already warm, so `ACCENT`
+// is desaturated into a muted brick and stops there rather than being rotated
+// through orange into something that would read as a highlight.
+
+const WOOD = '#816a4e';
+const DARK_WOOD = '#644f3c';
+const PALE_WOOD = '#b9a585';
+const FABRIC = '#9c9a93';
+const LINEN = '#e5e3dd';
+const WHITE = '#efefed';
+const STEEL = '#babec0';
+const DARK = '#3c3a38';
 const GLASSY = '#20211f';
-const SOIL = '#4a3f33';
-const LEAF = '#5c7f52';
-const ACCENT = '#b4564a';
+const SOIL = '#463f37';
+const LEAF = '#617b58';
+const ACCENT = '#a75e57';
 
 const T = 0.018; // the thickness of a door front, a shelf, a worktop
 
@@ -224,14 +270,14 @@ function bed(item: FurnitureItem): Part[] {
   ];
   for (let i = 0; i < pillows; i++) {
     const x = pillows === 1 ? 0 : (i - 0.5) * w * 0.44;
-    out.push(soft(x, frameH + mattress, -d / 2 + 0.34, w * (pillows === 1 ? 0.6 : 0.4), 0.13, 0.34, '#f6f3ec', { round: 0.055, solid: false }));
+    out.push(soft(x, frameH + mattress, -d / 2 + 0.34, w * (pillows === 1 ? 0.6 : 0.4), 0.13, 0.34, '#f3f3ef', { round: 0.055, solid: false }));
   }
   out.push(soft(0, frameH + mattress, d * 0.16, w - 0.05, 0.09, d * 0.6, ACCENT, { round: 0.04, solid: false }));
   return out;
 }
 
 /** A kitchen counter run: recessed plinth, carcass, worktop, fronts, splashback. */
-function counterRun(item: FurnitureItem, tone = '#d9d5cd', worktop = '#4b4a47'): Part[] {
+function counterRun(item: FurnitureItem, tone = '#d7d5cf', worktop = '#4b4a47'): Part[] {
   const w = item.width;
   const d = item.depth;
   const h = item.height;
@@ -247,14 +293,14 @@ function counterRun(item: FurnitureItem, tone = '#d9d5cd', worktop = '#4b4a47'):
 
 /** The island is a counter run with a worktop that overhangs on both sides. */
 function island(item: FurnitureItem): Part[] {
-  const out = counterRun(item, '#cfccc5', '#55534f');
+  const out = counterRun(item, '#ceccc6', '#545350');
   const h = item.height;
   const top = out[2]!;
   top.w = item.width + 0.16;
   top.d = item.depth + 0.3;
   top.y = h - 0.025;
   // The seat side has no doors; a run of drawers reads better than blank panels.
-  out.push(box(0, h - 0.05, -item.depth / 2 - 0.03, item.width + 0.1, 0.05, 0.06, '#55534f', 'stone', { solid: false, roughness: 0.42 }));
+  out.push(box(0, h - 0.05, -item.depth / 2 - 0.03, item.width + 0.1, 0.05, 0.06, '#545350', 'stone', { solid: false, roughness: 0.42 }));
   return out;
 }
 
@@ -270,8 +316,8 @@ function wallCabinet(item: FurnitureItem): Part[] {
   const y = 1.45;
   const doors = Math.max(1, Math.round(w / 0.6));
   return [
-    box(0, y, 0, w, h, d, '#d5d2cc', 'flat', { round: 0.008 }),
-    ...fronts(w, d, y + 0.02, h - 0.04, doors, '#dbd8d2', 'flat'),
+    box(0, y, 0, w, h, d, '#d4d2cd', 'flat', { round: 0.008 }),
+    ...fronts(w, d, y + 0.02, h - 0.04, doors, '#d9d8d4', 'flat'),
     box(0, y - 0.004, d / 2 - 0.02, w - 0.06, 0.012, 0.04, '#fff6e2', 'flat', { solid: false, roughness: 0.4 }),
   ];
 }
@@ -318,7 +364,7 @@ function wardrobe(item: FurnitureItem): Part[] {
   const h = item.height;
   return [
     box(0, 0, 0, w - 0.06, 0.09, d - 0.06, '#3f3d3a', 'flat', { solid: false }),
-    box(0, 0.09, 0, w, h - 0.09, d, '#cfc9c0', 'flat', { round: 0.008 }),
+    box(0, 0.09, 0, w, h - 0.09, d, '#cdc9c3', 'flat', { round: 0.008 }),
     box(-w / 4 - 0.008, 0.12, d / 2 + T / 2, w / 2 - 0.02, h - 0.15, T, WOOD, 'oak', { round: 0.006 }),
     box(w / 4 + 0.008, 0.12, d / 2 + T / 2, w / 2 - 0.02, h - 0.15, T, WOOD, 'oak', { round: 0.006 }),
     cyl(-0.03, h * 0.45, d / 2 + T + 0.012, 0.018, 0.22, STEEL, 'metal', { solid: false, metalness: 0.85, roughness: 0.35 }),
@@ -359,21 +405,21 @@ function chair(item: FurnitureItem): Part[] {
 }
 
 /** A washing machine or dryer: body, round door, control panel. */
-function appliance(item: FurnitureItem, tone = '#e7e5e0'): Part[] {
+function appliance(item: FurnitureItem, tone = '#e5e5e2'): Part[] {
   const w = item.width;
   const d = item.depth;
   const h = item.height;
   const door = Math.min(w, d) * 0.52;
   return [
     box(0, 0, 0, w, h, d, tone, 'metal', { round: 0.012, metalness: 0.25, roughness: 0.45 }),
-    cyl(0, (h - door) / 2, d / 2, door, 0.05, '#c9ccd0', 'metal', {
+    cyl(0, (h - door) / 2, d / 2, door, 0.05, '#cacdcf', 'metal', {
       solid: false,
       metalness: 0.7,
       roughness: 0.3,
       rx: 90,
     }),
     cyl(0, (h - door) / 2, d / 2 + 0.026, door * 0.68, 0.02, GLASSY, 'flat', { solid: false, roughness: 0.12, opacity: 0.85, rx: 90 }),
-    box(0, h - 0.09, d / 2 + 0.008, w - 0.08, 0.09, 0.016, '#b9bcc0', 'metal', { solid: false, metalness: 0.6, roughness: 0.4 }),
+    box(0, h - 0.09, d / 2 + 0.008, w - 0.08, 0.09, 0.016, '#babdbf', 'metal', { solid: false, metalness: 0.6, roughness: 0.4 }),
   ];
 }
 
@@ -389,12 +435,12 @@ function stove(item: FurnitureItem): Part[] {
     }
   }
   return [
-    box(0, 0, 0, w, h, d, '#dcdad5', 'metal', { round: 0.01, metalness: 0.2, roughness: 0.5 }),
+    box(0, 0, 0, w, h, d, '#dbdad6', 'metal', { round: 0.01, metalness: 0.2, roughness: 0.5 }),
     box(0, h, 0, w, 0.014, d, GLASSY, 'flat', { solid: false, roughness: 0.16, metalness: 0.2 }),
     ...burners,
     box(0, h * 0.22, d / 2 + 0.012, w - 0.09, h * 0.5, 0.02, GLASSY, 'flat', { solid: false, roughness: 0.14, opacity: 0.9 }),
     cyl(0, h * 0.72, d / 2 + 0.032, 0.02, w * 0.62, STEEL, 'metal', { solid: false, metalness: 0.9, roughness: 0.3, rz: 90 }),
-    box(0, h - 0.07, d / 2 + 0.012, w - 0.1, 0.05, 0.014, '#9fa3a7', 'metal', { solid: false, metalness: 0.7 }),
+    box(0, h - 0.07, d / 2 + 0.012, w - 0.1, 0.05, 0.014, '#a0a4a6', 'metal', { solid: false, metalness: 0.7 }),
   ];
 }
 
@@ -407,7 +453,7 @@ function sink(item: FurnitureItem): Part[] {
   const bd = d * 0.6;
   return [
     box(0, 0.1, 0, w - 0.08, 0.1, d - 0.06, '#3f3d3a', 'flat', { solid: false }),
-    box(0, 0.1, 0, w, h - 0.06, d, '#d9d5cd', 'flat'),
+    box(0, 0.1, 0, w, h - 0.06, d, '#d7d5cf', 'flat'),
     box(0, h - 0.05, 0, w + 0.02, 0.05, d + 0.02, '#4b4a47', 'stone', { round: 0.006, roughness: 0.42 }),
     // The bowl is a shallow tray set into the worktop rather than a decal.
     box(0, h - 0.09, 0, bw, 0.06, bd, STEEL, 'metal', { solid: false, metalness: 0.85, roughness: 0.28 }),
@@ -425,11 +471,11 @@ function shower(item: FurnitureItem): Part[] {
   const glassT = 0.014;
   const out: Part[] = [
     box(0, 0, 0, w, 0.07, d, WHITE, 'tile', { round: 0.02 }),
-    box(0, 0.05, 0, w - 0.14, 0.012, d - 0.14, '#d3d7d9', 'flat', { solid: false }),
+    box(0, 0.05, 0, w - 0.14, 0.012, d - 0.14, '#d4d7d8', 'flat', { solid: false }),
   ];
   for (const side of [-1, 1]) {
     out.push(
-      box((side * w) / 2, 0.07, 0, glassT, h - 0.07, d, '#cfe0e6', 'flat', {
+      box((side * w) / 2, 0.07, 0, glassT, h - 0.07, d, '#cfe1e6', 'flat', {
         solid: false,
         glass: true,
         opacity: 0.24,
@@ -452,8 +498,8 @@ function wc(item: FurnitureItem): Part[] {
   return [
     cyl(0, 0, d * 0.06, 0.18, bowlY - 0.06, WHITE, 'flat', { round: 0 }),
     box(0, bowlY - 0.07, d * 0.04, w, 0.09, d - 0.16, WHITE, 'flat', { round: 0.05 }),
-    box(0, bowlY + 0.02, d * 0.04, w - 0.05, 0.028, d - 0.2, '#f6f5f2', 'flat', { solid: false, round: 0.03 }),
-    box(0, bowlY + 0.05, -d * 0.02, w - 0.07, 0.025, d - 0.34, '#f6f5f2', 'flat', { solid: false, round: 0.03 }),
+    box(0, bowlY + 0.02, d * 0.04, w - 0.05, 0.028, d - 0.2, '#f4f5f4', 'flat', { solid: false, round: 0.03 }),
+    box(0, bowlY + 0.05, -d * 0.02, w - 0.07, 0.025, d - 0.34, '#f4f5f4', 'flat', { solid: false, round: 0.03 }),
     box(0, h - 0.36, -d / 2 + 0.09, w, 0.36, 0.18, WHITE, 'flat', { round: 0.03 }),
     cyl(0, h - 0.03, -d / 2 + 0.09, 0.04, 0.04, STEEL, 'metal', { solid: false, metalness: 0.85 }),
   ];
@@ -469,7 +515,7 @@ function shelving(item: FurnitureItem): Part[] {
   const out: Part[] = [
     box(-w / 2 + side / 2, 0, 0, side, h, d, PALE_WOOD, 'oak', { solid: false }),
     box(w / 2 - side / 2, 0, 0, side, h, d, PALE_WOOD, 'oak', { solid: false }),
-    box(0, 0, -d / 2 + 0.008, w - side * 2, h, 0.016, '#b6ac9c', 'flat', { solid: false }),
+    box(0, 0, -d / 2 + 0.008, w - side * 2, h, 0.016, '#b2aba0', 'flat', { solid: false }),
   ];
   for (let i = 0; i < shelves; i++) {
     const y = (h / (shelves + 1)) * (i + 1);
@@ -485,7 +531,7 @@ function shelving(item: FurnitureItem): Part[] {
             w * 0.16,
             h * (0.09 + (k % 3) * 0.02),
             d * 0.6,
-            ['#8a6f5a', '#6d7f86', '#9a8b74'][k]!,
+            ['#837061', '#6e8185', '#958a79'][k]!,
             'flat',
             { solid: false, round: 0.01 },
           ),
@@ -502,14 +548,14 @@ function plant(item: FurnitureItem): Part[] {
   const h = item.height;
   const potH = h * 0.22;
   const out: Part[] = [
-    cyl(0, 0, 0, w * 0.62, potH, '#a9714c', 'flat', { round: 0 }),
-    cyl(0, potH - 0.03, 0, w * 0.68, 0.05, '#8f5c3d', 'flat', { solid: false, round: 0 }),
+    cyl(0, 0, 0, w * 0.62, potH, '#9e7357', 'flat', { round: 0 }),
+    cyl(0, potH - 0.03, 0, w * 0.68, 0.05, '#855e47', 'flat', { solid: false, round: 0 }),
     cyl(0, potH - 0.02, 0, w * 0.54, 0.03, SOIL, 'flat', { solid: false, round: 0 }),
   ];
   const canopy = h - potH;
   for (let i = 0; i < 3; i++) {
     const t = i / 2;
-    out.push(cyl((i - 1) * w * 0.09, potH, 0, 0.022, canopy * (0.3 + t * 0.25), '#6b7a4e', 'leaf', { solid: false }));
+    out.push(cyl((i - 1) * w * 0.09, potH, 0, 0.022, canopy * (0.3 + t * 0.25), '#687654', 'leaf', { solid: false }));
   }
   for (let i = 0; i < 4; i++) {
     const a = (i / 4) * Math.PI * 2;
@@ -529,8 +575,8 @@ function rug(item: FurnitureItem): Part[] {
   const d = item.depth;
   const h = Math.max(0.012, item.height);
   return [
-    box(0, 0, 0, w, h, d, item.color ?? '#c2b6a2', 'fabric', { solid: false, roughness: 0.97, round: 0.004 }),
-    box(0, h, 0, w - 0.2, 0.004, d - 0.2, '#9a8b74', 'fabric', { solid: false, roughness: 0.97, round: 0.002 }),
+    box(0, 0, 0, w, h, d, item.color ?? '#bdb5a7', 'fabric', { solid: false, roughness: 0.97, round: 0.004 }),
+    box(0, h, 0, w - 0.2, 0.004, d - 0.2, '#958a79', 'fabric', { solid: false, roughness: 0.97, round: 0.002 }),
   ];
 }
 
@@ -539,8 +585,8 @@ function waterHeater(item: FurnitureItem): Part[] {
   const w = item.width;
   const h = item.height;
   return [
-    cyl(0, 0, 0, w, h, '#e2e0db', 'metal', { round: 0, metalness: 0.35, roughness: 0.4 }),
-    cyl(0, h, 0, w * 0.7, 0.06, '#c4c2bd', 'metal', { solid: false, round: 0, metalness: 0.4 }),
+    cyl(0, 0, 0, w, h, '#e0e0dd', 'metal', { round: 0, metalness: 0.35, roughness: 0.4 }),
+    cyl(0, h, 0, w * 0.7, 0.06, '#c3c2be', 'metal', { solid: false, round: 0, metalness: 0.4 }),
     cyl(w * 0.36, h * 0.86, 0, 0.03, h * 0.16, STEEL, 'metal', { solid: false, round: 0, metalness: 0.85 }),
     cyl(-w * 0.36, 0.02, 0, 0.03, h * 0.14, STEEL, 'metal', { solid: false, round: 0, metalness: 0.85 }),
   ];
@@ -553,8 +599,8 @@ function tvUnit(item: FurnitureItem): Part[] {
   const h = item.height;
   return [
     ...legs(w, d, 0.12, 0.04, DARK),
-    box(0, 0.12, 0, w, h - 0.12, d, '#6d675e', 'oak', { round: 0.008 }),
-    ...fronts(w, d, 0.15, h - 0.18, Math.max(2, Math.round(w / 0.6)), '#6d675e', 'oak'),
+    box(0, 0.12, 0, w, h - 0.12, d, '#6c6760', 'oak', { round: 0.008 }),
+    ...fronts(w, d, 0.15, h - 0.18, Math.max(2, Math.round(w / 0.6)), '#6c6760', 'oak'),
   ];
 }
 
@@ -567,9 +613,9 @@ function desk(item: FurnitureItem): Part[] {
   const pedW = Math.min(0.42, w * 0.3);
   return [
     box(0, h - top, 0, w, top, d, PALE_WOOD, 'oak', { round: 0.01 }),
-    box(w / 2 - pedW / 2 - 0.03, 0.02, 0, pedW, h - top - 0.04, d - 0.06, '#e4e1da', 'flat', { solid: false, round: 0.008 }),
+    box(w / 2 - pedW / 2 - 0.03, 0.02, 0, pedW, h - top - 0.04, d - 0.06, '#e2e1dc', 'flat', { solid: false, round: 0.008 }),
     ...[0, 1, 2].map((i) =>
-      box(w / 2 - pedW / 2 - 0.03, 0.06 + i * ((h - top) / 3), d / 2 - 0.02, pedW - 0.04, (h - top) / 3 - 0.04, 0.016, '#dcd9d2', 'flat', {
+      box(w / 2 - pedW / 2 - 0.03, 0.06 + i * ((h - top) / 3), d / 2 - 0.02, pedW - 0.04, (h - top) / 3 - 0.04, 0.016, '#dad9d4', 'flat', {
         solid: false,
         round: 0.005,
       }),
@@ -651,6 +697,6 @@ export function furnitureParts(item: FurnitureItem): Part[] {
     case 'desk':
       return desk(item);
     default:
-      return [box(0, 0, 0, item.width, item.height, item.depth, tint ?? '#c9c2b1', 'flat', { round: 0.02 })];
+      return [box(0, 0, 0, item.width, item.height, item.depth, tint ?? '#c5c1b5', 'flat', { round: 0.02 })];
   }
 }

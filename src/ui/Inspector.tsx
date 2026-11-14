@@ -42,8 +42,8 @@ export function Inspector() {
 
 function Group({ title, children, actions }: { title: string; children: React.ReactNode; actions?: React.ReactNode }) {
   return (
-    <section className="border-b border-line px-3 py-2.5 last:border-b-0">
-      <header className="mb-2 flex h-5 items-center justify-between">
+    <section className="border-b border-line px-3.5 py-3 last:border-b-0">
+      <header className="mb-2.5 flex min-h-8 items-center justify-between gap-2">
         <h3 className="panel-title">{title}</h3>
         {actions}
       </header>
@@ -54,10 +54,25 @@ function Group({ title, children, actions }: { title: string; children: React.Re
 
 function Row({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
-    <label className="mb-1.5 flex items-center gap-2" title={hint}>
+    <label className="mb-2 flex items-center gap-2 last:mb-0" title={hint}>
       <span className="w-[86px] shrink-0 text-[11px] text-inkSoft">{label}</span>
       <span className="min-w-0 flex-1">{children}</span>
     </label>
+  );
+}
+
+/**
+ * A read-only summary strip — area, length, footprint, riser.
+ *
+ * One component so every "here is the number the model actually holds" line in
+ * the inspector looks the same: a raised block, the label left, the value right.
+ */
+function Stat({ label, value, testId }: { label: string; value: React.ReactNode; testId?: string }) {
+  return (
+    <div className="mt-2.5 flex items-center justify-between rounded-control border border-line bg-raised px-2.5 py-1.5">
+      <span className="text-[11px] text-inkSoft">{label}</span>
+      <span className="metric" data-testid={testId}>{value}</span>
+    </div>
   );
 }
 
@@ -82,7 +97,7 @@ function Num({
           if (Number.isFinite(v)) onChange(v);
         }}
       />
-      {suffix && <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-inkFaint">{suffix}</span>}
+      {suffix && <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-inkFaint">{suffix}</span>}
     </span>
   );
 }
@@ -104,7 +119,7 @@ function RoomInspector({ room }: { room: Room }) {
         title="Room"
         actions={
           <button
-            className="btn btn-ghost btn-danger h-6 px-1.5 text-[11px]"
+            className="btn btn-ghost btn-danger px-2 text-[12px]"
             onClick={() => useProject.getState().run('removeRoom', [room.id], { actor: 'user' })}
           >
             Delete
@@ -142,10 +157,7 @@ function RoomInspector({ room }: { room: Room }) {
           <Row label="Ceiling"><Num value={room.height} suffix="h" onChange={(v) => run('resizeRoom' as never, [{ roomId: room.id, height: v }], `rh:${room.id}`)} /></Row>
         </div>
         {measured && (
-          <div className="mt-2 flex items-center justify-between rounded bg-paper px-2 py-1.5">
-            <span className="text-[11px] text-inkSoft">Area</span>
-            <span className="metric" data-testid="room-area">{formatArea(measured.area, units)}</span>
-          </div>
+          <Stat label="Area" value={formatArea(measured.area, units)} testId="room-area" />
         )}
       </Group>
 
@@ -202,7 +214,7 @@ function WallInspector({ wall }: { wall: Wall }) {
       <Group
         title="Wall"
         actions={
-          <button className="btn btn-ghost btn-danger h-6 px-1.5 text-[11px]" onClick={() => useProject.getState().run('removeWall', [wall.id], { actor: 'user' })}>
+          <button className="btn btn-ghost btn-danger px-2 text-[12px]" onClick={() => useProject.getState().run('removeWall', [wall.id], { actor: 'user' })}>
             Delete
           </button>
         }
@@ -217,10 +229,7 @@ function WallInspector({ wall }: { wall: Wall }) {
         </Row>
         <Row label="Thickness"><Num value={wall.thickness} step={0.01} suffix="t" onChange={(v) => run('moveWall' as never, [{ wallId: wall.id, thickness: v }], `wt:${wall.id}`)} /></Row>
         <Row label="Height"><Num value={wall.height} step={0.05} suffix="h" onChange={(v) => run('moveWall' as never, [{ wallId: wall.id, height: v }], `wh:${wall.id}`)} /></Row>
-        <div className="mt-2 flex items-center justify-between rounded bg-paper px-2 py-1.5">
-          <span className="text-[11px] text-inkSoft">Length</span>
-          <span className="metric">{formatLength(len, units, 2)}</span>
-        </div>
+        <Stat label="Length" value={formatLength(len, units, 2)} />
       </Group>
 
       <Group title="Openings">
@@ -234,14 +243,14 @@ function WallInspector({ wall }: { wall: Wall }) {
                   className="row w-full text-left"
                   onClick={() => useProject.getState().setSelection({ kinds: ['opening'], ids: [o.id] })}
                 >
-                  <span className="flex-1 text-[12px] text-ink">{o.kind === 'door' || o.kind === 'doorway' ? 'Door' : 'Window'}</span>
+                  <span className="flex-1 text-[13px] text-ink">{o.kind === 'door' || o.kind === 'doorway' ? 'Door' : 'Window'}</span>
                   <span className="metric text-inkFaint">{formatLength(o.width, units, 2)}</span>
                 </button>
               </li>
             ))}
           </ul>
         )}
-        <div className="flex gap-1">
+        <div className="flex gap-1.5">
           <button className="btn flex-1 justify-center" onClick={() => run('addOpening' as never, [{ wallId: wall.id, kind: 'door', ...OPENING_DEFAULTS.interiorDoor }])}>
             + Door
           </button>
@@ -264,7 +273,7 @@ function OpeningInspector({ wall, opening }: { wall: Wall; opening: Opening }) {
     <Group
       title={isDoor ? 'Door' : 'Window'}
       actions={
-        <button className="btn btn-ghost btn-danger h-6 px-1.5 text-[11px]" onClick={() => useProject.getState().run('removeOpening', [wall.id, opening.id], { actor: 'user' })}>
+        <button className="btn btn-ghost btn-danger px-2 text-[12px]" onClick={() => useProject.getState().run('removeOpening', [wall.id, opening.id], { actor: 'user' })}>
           Delete
         </button>
       }
@@ -273,7 +282,7 @@ function OpeningInspector({ wall, opening }: { wall: Wall; opening: Opening }) {
       <Row label="Height"><Num value={opening.height} step={0.01} suffix="h" onChange={(v) => edit({ height: v }, `oh:${opening.id}`)} /></Row>
       {isDoor ? (
         <Row label="Swing">
-          <div className="flex gap-1">
+          <div className="flex gap-1.5">
             {(['positive', 'negative'] as const).map((s) => (
               <button key={s} className="btn flex-1 justify-center" aria-pressed={opening.swing === s} onClick={() => edit({ swing: s })}>
                 {s === 'positive' ? 'Left' : 'Right'}
@@ -305,7 +314,7 @@ function FurnitureInspector({ item }: { item: { id: string; catalogId: string; l
     <Group
       title={item.label}
       actions={
-        <button className="btn btn-ghost btn-danger h-6 px-1.5 text-[11px]" onClick={() => useProject.getState().run('removeFurniture', [item.id], { actor: 'user' })}>
+        <button className="btn btn-ghost btn-danger px-2 text-[12px]" onClick={() => useProject.getState().run('removeFurniture', [item.id], { actor: 'user' })}>
           Delete
         </button>
       }
@@ -317,24 +326,21 @@ function FurnitureInspector({ item }: { item: { id: string; catalogId: string; l
         <Row label="Centre Y"><Num value={item.y} step={0.05} suffix="y" onChange={(v) => edit({ y: v })} /></Row>
         <Row label="Rotate"><Num value={item.rotation} step={15} suffix="°" onChange={(v) => edit({ rotation: v }, `fr:${item.id}`)} /></Row>
         <Row label="Height" hint="Taken from the catalogue — swap the piece for one of a different size">
-          <span className="metric block rounded border border-line bg-paper px-2 py-1 text-right text-inkFaint">{item.height.toFixed(2)} m</span>
+          <span className="metric block rounded-control border border-line bg-raised px-2.5 py-2 text-right text-inkFaint">{item.height.toFixed(2)} m</span>
         </Row>
       </div>
       <Row label="Colour">
-        <span className="flex items-center gap-1.5">
+        <span className="flex items-center gap-2">
           <input
             type="color"
-            className="h-7 w-9 cursor-pointer rounded border border-line bg-surface p-0.5"
+            className="h-8 w-10 cursor-pointer rounded-control border border-line bg-surface p-0.5"
             value={item.color ?? '#c9c2b1'}
             onChange={(e) => edit({ color: e.target.value })}
           />
           <span className="metric flex-1 text-inkFaint">{item.color ?? 'default'}</span>
         </span>
       </Row>
-      <div className="mt-2 flex items-center justify-between rounded bg-paper px-2 py-1.5">
-        <span className="text-[11px] text-inkSoft">Footprint</span>
-        <span className="metric">{formatArea(item.width * item.depth, units)}</span>
-      </div>
+      <Stat label="Footprint" value={formatArea(item.width * item.depth, units)} />
       {!item.roomId && <p className="hint mt-1.5 text-warn">This item is not inside a room.</p>}
     </Group>
   );
@@ -375,7 +381,7 @@ function StairInspector({ id }: { id: string }) {
         <Row label="Steps"><Num value={s.riserCount} step={1} min={2} suffix="n" onChange={(v) => run('addStaircase' as never, [{ ...s, riserCount: Math.round(v) }])} /></Row>
         <Row label="Centre X"><Num value={s.x} suffix="x" onChange={(v) => run('addStaircase' as never, [{ ...s, x: v }])} /></Row>
       </div>
-      <div className="mt-1 space-y-1 rounded bg-paper px-2 py-1.5 text-[11px]">
+      <div className="mt-2.5 space-y-1.5 rounded-control border border-line bg-raised px-2.5 py-2 text-[11px]">
         <div className="flex justify-between"><span className="text-inkSoft">Riser</span><span className="metric">{riser.toFixed(3)} m</span></div>
         <div className="flex justify-between"><span className="text-inkSoft">Going</span><span className="metric">{going.toFixed(3)} m</span></div>
         <div className="flex justify-between"><span className="text-inkSoft">Slope</span><span className="metric">{((Math.atan2(s.rise ?? 3, s.run) * 180) / Math.PI).toFixed(0)}°</span></div>
@@ -445,16 +451,16 @@ function FloorPanel() {
           />
         </Row>
         <Row label="Floor height"><Num value={floor?.height ?? 3} step={0.05} suffix="h" onChange={(v) => useProject.getState().run('setFloorHeight', [floor?.id ?? '', v], { actor: 'user', coalesceKey: `fh:${floor?.id}` })} /></Row>
-        <div className="mt-1 flex items-center justify-between rounded bg-paper px-2 py-1.5">
+        <div className="mt-1 flex items-center justify-between rounded-control border border-line bg-raised px-2.5 py-1.5">
           <span className="text-[11px] text-inkSoft">{rooms.length} rooms</span>
           <span className="metric">{formatArea(rooms.reduce((sum, r) => sum + r.width * r.depth, 0), units)}</span>
         </div>
         {rooms.length > 0 && (
-          <ul className="mt-2 space-y-0.5">
+          <ul className="mt-2.5 space-y-1">
             {rooms.map((r) => (
               <li key={r.id}>
                 <button className="row w-full text-left" onClick={() => useProject.getState().setSelection({ kinds: ['room'], ids: [r.id] })}>
-                  <span className="min-w-0 flex-1 truncate text-[12px] text-ink">{r.label}</span>
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{r.label}</span>
                   <span className="metric shrink-0 text-inkFaint">{formatArea(r.width * r.depth, units)}</span>
                 </button>
               </li>
@@ -470,10 +476,10 @@ function FloorPanel() {
             : 'Pick a piece, then click a room to drop it in.'}
         </p>
         {categories.map(([category, items]) => (
-          <details key={category} className="mb-1.5" open={category === 'seating'}>
-            <summary className="cursor-pointer list-none text-[11px] font-medium capitalize text-inkSoft hover:text-ink">
+          <details key={category} className="mb-2 last:mb-0" open={category === 'seating'}>
+            <summary className="cursor-pointer list-none rounded-control px-1 py-1 text-[11px] font-medium capitalize text-inkSoft transition-colors hover:bg-raised hover:text-ink">
               {category}
-              <span className="ml-1 font-normal text-inkFaint">{items.length}</span>
+              <span className="ml-1 font-normal tabular-nums text-inkFaint">{items.length}</span>
             </summary>
             <div className="mt-1 space-y-0.5">
               {items.map((item) => (
@@ -488,11 +494,11 @@ function FloorPanel() {
                   }}
                 >
                   <span
-                    className="h-3 w-3 shrink-0 rounded-sm border border-line"
+                    className="h-3.5 w-3.5 shrink-0 rounded-sm border border-line"
                     style={{ background: item.color ?? '#c9c2b1' }}
                     aria-hidden
                   />
-                  <span className="min-w-0 flex-1 truncate text-[12px] text-ink">{item.label}</span>
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{item.label}</span>
                   <span className="metric shrink-0 text-inkFaint">{item.width}×{item.depth}</span>
                 </button>
               ))}

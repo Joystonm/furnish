@@ -12,7 +12,7 @@ import { toJSON } from '../model/serialize.ts';
 import { planToSvg } from './planSvg.ts';
 
 const slug = (s: string): string =>
-  s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'argon';
+  s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'furnish';
 
 function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
@@ -32,7 +32,7 @@ function saveText(text: string, filename: string, mime: string): void {
 }
 
 export function downloadProjectJson(project: Project): void {
-  saveText(toJSON(project, true), `${slug(project.name)}.argon.json`, 'application/json');
+  saveText(toJSON(project, true), `${slug(project.name)}.furnish.json`, 'application/json');
   useProjectLog('Export project JSON');
 }
 

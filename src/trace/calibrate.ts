@@ -2,7 +2,7 @@
  * Image → world calibration.
  *
  * A floor-plan photo or scan has no scale. To trace it you must establish how
- * many metres an image pixel is worth, and Argon refuses to guess: calibration
+ * many metres an image pixel is worth, and Furnish refuses to guess: calibration
  * is only ever derived from a length the user asserts is real ("this wall is
  * 4.20 m"), and until they do, `confirmed` is false and the tracer will not
  * convert any detection into a dimension.

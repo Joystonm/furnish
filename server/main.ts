@@ -38,7 +38,7 @@ if (fs.existsSync(dist)) {
 const port = Number(process.env.PORT || 8787);
 app.listen(port, () => {
   const cfg = clientConfig();
-  console.log(`\n  Argon running at http://localhost:${port}`);
+  console.log(`\n  Furnish running at http://localhost:${port}`);
   if (isConfigured()) console.log(`  AI: MiniMax via ${cfg.baseUrl}/v1/messages (model ${cfg.model})`);
   else
     console.log(

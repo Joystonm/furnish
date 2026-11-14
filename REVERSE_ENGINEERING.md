@@ -1,8 +1,8 @@
-# Argon — Phase 1 Reverse Engineering: Alza and ArchMorph
+# Furnish — Phase 1 Reverse Engineering: Alza and ArchMorph
 
 **Research date:** 2026-10-15
-**Subject:** two WebMCP Challenge winning floor-plan/architecture tools, studied as prior art for Argon.
-**Purpose:** establish, with evidence, what these two projects actually are and how they work, so Argon can decide what to adopt, what to avoid, and where its own differentiation lies.
+**Subject:** two WebMCP Challenge winning floor-plan/architecture tools, studied as prior art for Furnish.
+**Purpose:** establish, with evidence, what these two projects actually are and how they work, so Furnish can decide what to adopt, what to avoid, and where its own differentiation lies.
 
 ---
 
@@ -21,10 +21,10 @@ Both won the same challenge `[OBSERVED-LIVE]` — see §2.4 and §6.2, and read 
 
 | Method | What it produced |
 |---|---|
-| Direct read of the cloned Alza source at `F:\Argon\_research\alza` | Line counts, tool definitions, issue codes, data model, greps `[VERIFIED-SOURCE]` |
-| Direct read / spot-check of the cloned ArchMorph source at `F:\Argon\_research\archmorph` | Line counts, tool inventory, registration sites, persistence layer `[VERIFIED-SOURCE]` |
+| Direct read of the cloned Alza source at `F:\Furnish\_research\alza` | Line counts, tool definitions, issue codes, data model, greps `[VERIFIED-SOURCE]` |
+| Direct read / spot-check of the cloned ArchMorph source at `F:\Furnish\_research\archmorph` | Line counts, tool inventory, registration sites, persistence layer `[VERIFIED-SOURCE]` |
 | HTTP fetches of live URLs performed during the prior research session | Response codes, byte sizes, headers, shipped-bundle contents `[OBSERVED-LIVE]` |
-| Reading of prior-session research notes at `F:\Argon\_research\alza-notes.md` (616 lines) | Devpost copy, author profile, challenge metadata, screenshot descriptions `[OBSERVED-LIVE]` as tagged there |
+| Reading of prior-session research notes at `F:\Furnish\_research\alza-notes.md` (616 lines) | Devpost copy, author profile, challenge metadata, screenshot descriptions `[OBSERVED-LIVE]` as tagged there |
 | **No dev servers run, no test suites executed, no videos watched, no web search performed for this document** | — |
 
 The Alza clone's own `npm test` (30 vitest tests) **was** run during the prior session and reported green `[VERIFIED-SOURCE per notes §5.5]`. It was **not** re-run for this document. The Playwright E2E battery was never run `[UNVERIFIED]`.
@@ -35,7 +35,7 @@ Every factual claim in this document carries one of four tags:
 
 | Tag | Meaning |
 |---|---|
-| `[VERIFIED-SOURCE]` | Read directly from the cloned source tree at `F:\Argon\_research\`; the line number or command is given where it matters. |
+| `[VERIFIED-SOURCE]` | Read directly from the cloned source tree at `F:\Furnish\_research\`; the line number or command is given where it matters. |
 | `[OBSERVED-LIVE]` | An HTTP fetch was performed against a live URL and the result (status, bytes, header, or literal text) is quoted. |
 | `[INFERRED]` | My reasoning. **Every `[INFERRED]` tag states what it rests on.** |
 | `[UNVERIFIED]` | Attempted and not obtained. Collected in §11 rather than asserted anywhere else. |
@@ -52,7 +52,7 @@ ZERO MATCHES
 $ grep -rn "localStorage|sessionStorage|indexedDB" src
 src/ui/Sidebar.tsx:40:        // reencode to JPEG ≤1600 px (localStorage-friendly)
 ```
-`[VERIFIED-SOURCE]` — all three re-run for this document at `F:\Argon\_research\alza`.
+`[VERIFIED-SOURCE]` — all three re-run for this document at `F:\Furnish\_research\alza`.
 
 Line counts re-confirmed exactly: `src/mcp/tools.ts` **535**, `src/model/issues.ts` **351**, `src/model/types.ts` **124**, `src/editor/Editor.tsx` **444**, `src/three/build.ts` **466**, `src/model/store.ts` **544** `[VERIFIED-SOURCE]`.
 
@@ -128,7 +128,7 @@ The four Devpost sections, in the author's words `[OBSERVED-LIVE]`:
 
 ### 2.3 What the author says he learned
 
-Verbatim from the Devpost "What I learned" section `[OBSERVED-LIVE]`. Three of these are directly useful to Argon:
+Verbatim from the Devpost "What I learned" section `[OBSERVED-LIVE]`. Three of these are directly useful to Furnish:
 
 > "the agent can see the page" and "the agent can use the page" are different problems.
 
@@ -235,7 +235,7 @@ The eight demo beats are, however, reproducible from committed code: `record6.mj
 
 ## 4. Alza — verified source findings
 
-All from `F:\Argon\_research\alza`, read for this document.
+All from `F:\Furnish\_research\alza`, read for this document.
 
 ### 4.1 Stack
 
@@ -252,7 +252,7 @@ All from `F:\Argon\_research\alza`, read for this document.
 | AI / model | **none** — no SDK, no endpoint, no key | `[VERIFIED-SOURCE]` (§1.4 grep) |
 | Persistence | **none** | `[VERIFIED-SOURCE]` (§1.4 grep) |
 
-Colour is a deliberate, hand-authored token set in `src/styles.css` — a "warm drafting-studio palette": `--bg: #f7f4ee`, `--panel: #fffdf8`, `--ink: #2e2a24`, `--accent: #e07b39` (orange), `--agent: #4f86b0` (blue, used for agent-originated UI), `--danger: #c04545`, `--ok: #4f9e57` `[VERIFIED-SOURCE]`. Note `--agent` as a distinct colour channel: **agent actions are visually distinguished from human actions in the UI.** Argon should take this.
+Colour is a deliberate, hand-authored token set in `src/styles.css` — a "warm drafting-studio palette": `--bg: #f7f4ee`, `--panel: #fffdf8`, `--ink: #2e2a24`, `--accent: #e07b39` (orange), `--agent: #4f86b0` (blue, used for agent-originated UI), `--danger: #c04545`, `--ok: #4f9e57` `[VERIFIED-SOURCE]`. Note `--agent` as a distinct colour channel: **agent actions are visually distinguished from human actions in the UI.** Furnish should take this.
 
 ### 4.2 Data model — `src/model/types.ts`, 124 lines
 
@@ -387,7 +387,7 @@ There is **no save, no load, no autosave, no share link**. Reload the page and y
 
 Undo *is* implemented, in memory: a 50-deep stack of `structuredClone(model)` snapshots (`store.ts:109`), plus a 200-entry ring-buffered activity log (`store.ts:101`).
 
-`[INFERRED]` This is either a deliberate trade to keep "plans never leave the browser" simple, or simply unfinished. **Either way it is a real gap Argon should beat** — see §8.2.
+`[INFERRED]` This is either a deliberate trade to keep "plans never leave the browser" simple, or simply unfinished. **Either way it is a real gap Furnish should beat** — see §8.2.
 
 ### 4.7 Build and deploy tooling
 
@@ -407,7 +407,7 @@ The transport is chosen at runtime and reported in the tool summary — the stri
 
 The header plumbing is a **custom Vite plugin** (`vite.config.ts`) emitting a `_headers` file readable identically by Cloudflare Pages and Netlify `[VERIFIED-SOURCE]`.
 
-`[INFERRED]` This demonstrates something worth knowing: **the browser can act as the integration layer between two independent origins with no server in the path.** Rests on the iframe + `allow="tools"` + `exposedTo` + `getTools({fromOrigins})` chain all being present in source and the production headers being present live. **Argon does not need this** — see §9.4.
+`[INFERRED]` This demonstrates something worth knowing: **the browser can act as the integration layer between two independent origins with no server in the path.** Rests on the iframe + `allow="tools"` + `exposedTo` + `getTools({fromOrigins})` chain all being present in source and the production headers being present live. **Furnish does not need this** — see §9.4.
 
 ### 4.9 Total size
 
@@ -436,7 +436,7 @@ The header plumbing is a **custom Vite plugin** (`vite.config.ts`) emitting a `_
 | `src/ui/ApprovalBar.tsx` | 37 | the human-in-the-loop gate |
 | `src/three/exportBus.ts` | 28 | |
 
-**The domain-logic core is ~1,004 lines**: `issues.ts` 351 + `geometry.ts` 187 + `build.ts` 466. **That is the number to compare against ArchMorph's 3,970-line `architecture.ts`.** Argon should size its domain module against the *problem*, not against the larger of the two — see §8.2.
+**The domain-logic core is ~1,004 lines**: `issues.ts` 351 + `geometry.ts` 187 + `build.ts` 466. **That is the number to compare against ArchMorph's 3,970-line `architecture.ts`.** Furnish should size its domain module against the *problem*, not against the larger of the two — see §8.2.
 
 ---
 
@@ -488,7 +488,7 @@ And the mapping object's own `warning` field, returned to the agent:
 
 > *"Do not reuse pixel numbers across the two copies: the page holds a resized one. Fractions are safe, pixels are not."*
 
-**Fractions are a resize-invariant coordinate system.** That is a genuinely transferable insight and it applies to Argon regardless of who does the vision — see §9.5.
+**Fractions are a resize-invariant coordinate system.** That is a genuinely transferable insight and it applies to Furnish regardless of who does the vision — see §9.5.
 
 ### 5.4 `calibrate_underlay` — one dimension is enough
 
@@ -557,15 +557,15 @@ The author's own comment on the cost of this approach `[VERIFIED-SOURCE]` (READM
 | **The accuracy of any agent tracing an unseen plan** | `[UNVERIFIED]` — **no accuracy metric is published anywhere**, for either project |
 | The demo produced 12 walls, 14 openings, 10 rooms, 34 pieces of furniture | `[OBSERVED-LIVE]` for the Devpost claim and the screenshot activity feed; `[VERIFIED-SOURCE]` that `trace.mjs` is consistent with it — corroborating, not confirming |
 
-### 5.8 What this means for Argon
+### 5.8 What this means for Furnish
 
 **The app is the ruler and the tool provider; the agent is the eye.** `[INFERRED]` — rests directly on §5.1's verified zero-CV result combined with the verified `TRACING_PROTOCOL` text.
 
 Consequences, stated plainly:
 
 - **The hard part is entirely delegated to the host model.** Accuracy, scale ambiguity and symbol recognition are all inherited from whichever agent the user happens to be running. Alza has **no lever over them at all** `[INFERRED]` — rests on there being no code path between the image and the model that Alza controls.
-- **Argon is provider-independent; Alza is not.** Argon replaces "whatever WebMCP host the user has open" with an explicit orchestration layer (§9.4). That is a structural difference, not a feature difference: Alza's tracing quality is a property of the user's chat window.
-- **A genuinely differentiated Argon feature is doing the vectorisation in-browser** — edge/contour detection, line fitting, room-graph reconstruction — so scale estimation and wall extraction become deterministic and measurable, with the model used only for naming rooms and flagging ambiguity `[INFERRED]`. **Nothing in Alza competes with that**, and nothing in ArchMorph either. This is the clearest open position Argon has identified in this research.
+- **Furnish is provider-independent; Alza is not.** Furnish replaces "whatever WebMCP host the user has open" with an explicit orchestration layer (§9.4). That is a structural difference, not a feature difference: Alza's tracing quality is a property of the user's chat window.
+- **A genuinely differentiated Furnish feature is doing the vectorisation in-browser** — edge/contour detection, line fitting, room-graph reconstruction — so scale estimation and wall extraction become deterministic and measurable, with the model used only for naming rooms and flagging ambiguity `[INFERRED]`. **Nothing in Alza competes with that**, and nothing in ArchMorph either. This is the clearest open position Furnish has identified in this research.
 
 ---
 
@@ -611,7 +611,7 @@ An architecture / schematic-design tool built during The WebMCP Challenge submis
 
 **These were not run for this document** `[UNVERIFIED]`.
 
-This is a real difference and it is not close: Alza has **30 framework-run unit tests plus a 56-check Playwright E2E battery**; ArchMorph has hand-rolled assertion scripts. Argon already runs vitest and should not regress from it.
+This is a real difference and it is not close: Alza has **30 framework-run unit tests plus a 56-check Playwright E2E battery**; ArchMorph has hand-rolled assertion scripts. Furnish already runs vitest and should not regress from it.
 
 ---
 
@@ -639,7 +639,7 @@ Seven convergences, each independently verified in both codebases.
 
 ---
 
-## 8. Divergence, and what Argon should take from each
+## 8. Divergence, and what Furnish should take from each
 
 ### 8.1 Side-by-side
 
@@ -665,15 +665,15 @@ Seven convergences, each independently verified in both codebases.
 | Multimodal/image | **yes** — underlay + fractional mapping + `TRACING_PROTOCOL` | no equivalent found | `[VERIFIED-SOURCE]` |
 | Repo shape | 4 commits, 1 contributor | 1 commit | `[VERIFIED-SOURCE]` |
 
-### 8.2 The decisions Argon should take
+### 8.2 The decisions Furnish should take
 
 **Take from Alza:**
 
-- **The narrow tool surface (32) is the better default over ArchMorph's 63.** `[INFERRED]` Alza's bet is that a small, well-named, well-described surface is easier for a model to use correctly; rests on both counts being accurate and on ArchMorph needing a *separate* batch mechanism (`preview_changes`/`apply_changes`) precisely because 63 single-call tools make multi-step operations unwieldy. **A model choosing among 63 tools has more room to err than among 32.** Argon should pick deliberately and say which philosophy it is following.
-- **Alza's zero persistence is a gap to beat, not a philosophy to adopt.** Reloading loses everything. ArchMorph already persists with schema versioning and byte-bounded history `[VERIFIED-SOURCE]`; Argon must not inherit Alza's null state.
+- **The narrow tool surface (32) is the better default over ArchMorph's 63.** `[INFERRED]` Alza's bet is that a small, well-named, well-described surface is easier for a model to use correctly; rests on both counts being accurate and on ArchMorph needing a *separate* batch mechanism (`preview_changes`/`apply_changes`) precisely because 63 single-call tools make multi-step operations unwieldy. **A model choosing among 63 tools has more room to err than among 32.** Furnish should pick deliberately and say which philosophy it is following.
+- **Alza's zero persistence is a gap to beat, not a philosophy to adopt.** Reloading loses everything. ArchMorph already persists with schema versioning and byte-bounded history `[VERIFIED-SOURCE]`; Furnish must not inherit Alza's null state.
 - **The constraint engine as an *agent verifier loop* is Alza's single best idea.** `get_issues` is read-only, returns typed codes **and** human-readable sentences with quantities, and its clean-state string is `"0 issues — the plan is clean."` — an unambiguous loop terminator `[VERIFIED-SOURCE]`. ArchMorph's larger `architecture.ts` does not obviously provide the equivalent agent-facing verification surface `[INFERRED]`.
 - **The approval gate.** 37 lines of `ApprovalBar.tsx` plus a wrapper check answers a live spec open question (#165/#50). Crucially, a **rejection returns a real failure the agent can act on**, not an exception `[VERIFIED-SOURCE]`. Cheap, high-value, reusable.
-- **The agent colour channel.** `--agent: #4f86b0` distinguishes agent actions from human ones throughout the UI `[VERIFIED-SOURCE]`. Argon should adopt this from day one; retrofitting attribution into a UI is painful.
+- **The agent colour channel.** `--agent: #4f86b0` distinguishes agent actions from human ones throughout the UI `[VERIFIED-SOURCE]`. Furnish should adopt this from day one; retrofitting attribution into a UI is painful.
 
 **Take from ArchMorph:**
 
@@ -683,7 +683,7 @@ Seven convergences, each independently verified in both codebases.
 
 **Treat as a hazard in both:**
 
-- **Units in feet.** ArchMorph requires feet everywhere — `create_room` demands x/y/width/length in feet, `WALK_EYE_HEIGHT = 5.4`, `ALIGNMENT_TOLERANCE = 0.25` ft `[VERIFIED-SOURCE]`. A "5.4" eye height that is really 1.65 m, and a 0.25 tolerance that is really 7.6 cm, are **the kind of magic number that is unreadable in review and easy to get wrong in a UI label.** Alza's metres are more legible to a general audience and read naturally in every message. **Argon should use metres and say so in one canonical place, never scattered.** `[INFERRED]` — rests on the two verified unit conventions and on every Alza issue message reading more naturally in metres.
+- **Units in feet.** ArchMorph requires feet everywhere — `create_room` demands x/y/width/length in feet, `WALK_EYE_HEIGHT = 5.4`, `ALIGNMENT_TOLERANCE = 0.25` ft `[VERIFIED-SOURCE]`. A "5.4" eye height that is really 1.65 m, and a 0.25 tolerance that is really 7.6 cm, are **the kind of magic number that is unreadable in review and easy to get wrong in a UI label.** Alza's metres are more legible to a general audience and read naturally in every message. **Furnish should use metres and say so in one canonical place, never scattered.** `[INFERRED]` — rests on the two verified unit conventions and on every Alza issue message reading more naturally in metres.
 
 ---
 
@@ -697,7 +697,7 @@ Alza's loop, stated in `TRACING_PROTOCOL` step 8 and implemented as `get_issues`
 
 **Why it works:** the verifier is deterministic code operating on the real model, not the model's own opinion. The agent proposes, the engine disposes. The loop is bounded because each iteration either reduces the issue count or the agent is stuck.
 
-**The limit:** this only works if the constraint set is *small, precise and correct*. Nineteen codes covering the failure modes that matter is tractable. A verifier emitting hundreds of false positives is worse than none — the agent will thrash. **Argon should ship the verifier early and keep it narrow.** `[INFERRED]`
+**The limit:** this only works if the constraint set is *small, precise and correct*. Nineteen codes covering the failure modes that matter is tractable. A verifier emitting hundreds of false positives is worse than none — the agent will thrash. **Furnish should ship the verifier early and keep it narrow.** `[INFERRED]`
 
 ### 9.2 Actionable error sentences as an interface — *adopt, strongly*
 
@@ -713,25 +713,25 @@ This is the author's own stated lesson — **"an error message is an interface"*
 
 `preview_changes` (dry run, returns metrics + validation, changes nothing) then `apply_changes` (atomic, `expectedVersion`, all-or-nothing) `[VERIFIED-SOURCE]`. The `expectedVersion` check is the important half: it rejects a batch computed against a stale model rather than applying it to a world that has moved on.
 
-**The limit:** `preview_changes` and `apply_changes` both re-execute the batch (`prepareBatch` is called in both), so the work is done twice `[VERIFIED-SOURCE]`. For a 50-change batch against a 3,970-line domain module, that is real. Argon should cache the prepared draft between preview and apply, keyed by `expectedVersion`. `[INFERRED]`
+**The limit:** `preview_changes` and `apply_changes` both re-execute the batch (`prepareBatch` is called in both), so the work is done twice `[VERIFIED-SOURCE]`. For a 50-change batch against a 3,970-line domain module, that is real. Furnish should cache the prepared draft between preview and apply, keyed by `expectedVersion`. `[INFERRED]`
 
 ### 9.4 Permission hints and the approval gate — *adopt the gate; do not adopt the cross-origin part*
 
-**Adopt — the gate.** A destructive call parks as a UI request; the agent's `execute()` stays pending; the human decides; a rejection is a **normal result the agent can reason about**, not an exception `[VERIFIED-SOURCE]`. Note the subtlety Alza gets right: **`destructiveHint` is not part of WebMCP's `ToolAnnotations`** (it exists in MCP's, which carries it) `[VERIFIED-SOURCE]`, so Alza keeps it in its own descriptor type and enforces it page-side. Argon doing the same is correct and honest — the gate must not depend on a browser propagating an annotation that the spec does not define.
+**Adopt — the gate.** A destructive call parks as a UI request; the agent's `execute()` stays pending; the human decides; a rejection is a **normal result the agent can reason about**, not an exception `[VERIFIED-SOURCE]`. Note the subtlety Alza gets right: **`destructiveHint` is not part of WebMCP's `ToolAnnotations`** (it exists in MCP's, which carries it) `[VERIFIED-SOURCE]`, so Alza keeps it in its own descriptor type and enforces it page-side. Furnish doing the same is correct and honest — the gate must not depend on a browser propagating an annotation that the spec does not define.
 
-**Do not adopt — cross-origin tool exchange.** Alza's flagship novelty (a second origin publishing `nordika_list_products`/`nordika_get_product`, discovered via `getTools({fromOrigins})`, called via `executeTool()`, with a `_headers` file and `Permissions-Policy: tools=(…)`) is elegant, but **Argon replaces WebMCP with a provider-independent MiniMax orchestration layer** and is architecturally single-origin. Adding a second origin to serve a mock catalogue would add a headers contract, an iframe and a transport fallback for no product benefit. **The pattern is worth remembering and not worth copying.**
+**Do not adopt — cross-origin tool exchange.** Alza's flagship novelty (a second origin publishing `nordika_list_products`/`nordika_get_product`, discovered via `getTools({fromOrigins})`, called via `executeTool()`, with a `_headers` file and `Permissions-Policy: tools=(…)`) is elegant, but **Furnish replaces WebMCP with a provider-independent MiniMax orchestration layer** and is architecturally single-origin. Adding a second origin to serve a mock catalogue would add a headers contract, an iframe and a transport fallback for no product benefit. **The pattern is worth remembering and not worth copying.**
 
 ### 9.5 Fractional image coordinates — *adopt regardless of who does the vision*
 
 The insight in §5.3 survives independently of Alza's architecture: **fractions survive a resize, pixels do not.** `[VERIFIED-SOURCE]` rests on the verified `mapping` block and its warning string.
 
-Whether Argon's vision runs in a provider-independent orchestration layer or in the browser, this applies: any coordinate that crosses a boundary where the image may have been re-encoded must be **normalized 0..1**, never absolute pixels. `[INFERRED]` — this is a generalisation of a verified implementation detail, and it is the one pattern from Alza's tracing work that is unconditionally correct for Argon.
+Whether Furnish's vision runs in a provider-independent orchestration layer or in the browser, this applies: any coordinate that crosses a boundary where the image may have been re-encoded must be **normalized 0..1**, never absolute pixels. `[INFERRED]` — this is a generalisation of a verified implementation detail, and it is the one pattern from Alza's tracing work that is unconditionally correct for Furnish.
 
 ### 9.6 Procedure-as-constant — *adopt the content, question the mechanism*
 
 Alza ships `TRACING_PROTOCOL` as an 8-step string array in tool descriptions because WebMCP has no skills concept `[VERIFIED-SOURCE]`. The **content** — an explicit fidelity rule ("copy the drawing, do not redesign it"), an explicit ordering (structure before contents), an explicit ambiguity policy (`leave_note`, do not invent), and an explicit termination condition (`get_issues` until clean) — is exactly the kind of thing that makes agent behaviour predictable.
 
-The **mechanism** is the weak part: the author himself notes it "spends description budget on every tool that references it" `[VERIFIED-SOURCE]`. `[INFERRED]` Argon has a better place to put this — a provider-independent orchestration layer can hold a proper system prompt or a skills document, once, rather than duplicating it into every tool description. **Adopt the protocol; do not adopt the delivery hack.**
+The **mechanism** is the weak part: the author himself notes it "spends description budget on every tool that references it" `[VERIFIED-SOURCE]`. `[INFERRED]` Furnish has a better place to put this — a provider-independent orchestration layer can hold a proper system prompt or a skills document, once, rather than duplicating it into every tool description. **Adopt the protocol; do not adopt the delivery hack.**
 
 ---
 
@@ -739,7 +739,7 @@ The **mechanism** is the weak part: the author himself notes it "spends descript
 
 ### 10.1 No code reuse
 
-Both projects are **MIT**, which is permissive: we may read, study, and reuse substantial portions provided the copyright notice and permission notice are included `[VERIFIED-SOURCE]`. **Argon will not do so anyway.** The brief is explicit: **Argon reimplements the desired functionality with original code.** The MIT licence makes studying permissible; it does not make copying the plan. `[VERIFIED-SOURCE]` for the licence terms; the decision to not reuse is a project constraint, not a legal one.
+Both projects are **MIT**, which is permissive: we may read, study, and reuse substantial portions provided the copyright notice and permission notice are included `[VERIFIED-SOURCE]`. **Furnish will not do so anyway.** The brief is explicit: **Furnish reimplements the desired functionality with original code.** The MIT licence makes studying permissible; it does not make copying the plan. `[VERIFIED-SOURCE]` for the licence terms; the decision to not reuse is a project constraint, not a legal one.
 
 ### 10.2 No asset reuse — enumerated
 
@@ -748,9 +748,9 @@ The following are **off-limits** and will not be copied, reused, or shipped in a
 | Asset | Detail | Why |
 |---|---|---|
 | `plan-source.jpeg` | 345,425 bytes, **2048×2048** — the demo floor plan the agent traced (dimensions confirmed by JPEG SOF marker parse for this document) | It is the subject of Alza's traced demo. Even if its provenance is clean (§10.3), there is no benefit and non-trivial risk in taking it |
-| `shots/showcase/*.png` | 16 stills + `preview.gif`, ~8 MB tracked | Screenshots of their UI. Using them would misrepresent Argon's own product as theirs |
+| `shots/showcase/*.png` | 16 stills + `preview.gif`, ~8 MB tracked | Screenshots of their UI. Using them would misrepresent Furnish's own product as theirs |
 | Nordika supplier product data | 12 products: names, SKUs (NK-*), EUR prices, stock counts, colours | Their invented catalogue, verbatim |
-| The demo floor plan **as a dataset** | the geometry in `trace.mjs` — 12 walls, 14 openings, 10 rooms, 35 items | Even though `trace.mjs` is *data*, not code, it is a reproduction of their demo plan. **Argon will generate its own demo plan from its own assets** |
+| The demo floor plan **as a dataset** | the geometry in `trace.mjs` — 12 walls, 14 openings, 10 rooms, 35 items | Even though `trace.mjs` is *data*, not code, it is a reproduction of their demo plan. **Furnish will generate its own demo plan from its own assets** |
 
 ### 10.3 Provenance of `plan-source.jpeg` — do not rely on it either way
 
@@ -760,11 +760,11 @@ Worth recording as a general lesson: **this project already made the copyright m
 
 ### 10.4 No UI imitation
 
-Alza's warm drafting palette (`#f7f4ee` / `#e07b39`) and its specific layout (left toolbar, sidebar with six tabs, header pill) `[VERIFIED-SOURCE]` are theirs. The **general principle** of a token-based colour system with a distinct agent channel is worth taking (§8.2); the specific hex values and layout are not. Argon will have its own visual identity with its own original assets.
+Alza's warm drafting palette (`#f7f4ee` / `#e07b39`) and its specific layout (left toolbar, sidebar with six tabs, header pill) `[VERIFIED-SOURCE]` are theirs. The **general principle** of a token-based colour system with a distinct agent channel is worth taking (§8.2); the specific hex values and layout are not. Furnish will have its own visual identity with its own original assets.
 
 ### 10.5 No demo-plan reuse, and no claim we did not earn
 
-**Argon will not claim a "0 issues" result it has not measured.** Neither project's zero-issue claim is reproducible from published data (§11.4). If Argon publishes any accuracy or issue-rate figure, it will be measured by Argon's own harness on Argon's own assets.
+**Furnish will not claim a "0 issues" result it has not measured.** Neither project's zero-issue claim is reproducible from published data (§11.4). If Furnish publishes any accuracy or issue-rate figure, it will be measured by Furnish's own harness on Furnish's own assets.
 
 ---
 
@@ -780,7 +780,7 @@ Each item below was attempted and not obtained. Nothing elsewhere in this docume
 
 4. **The accuracy of the traced demo.** **No accuracy metric is published anywhere**, for Alza or ArchMorph. "0 issues — the plan is clean" is self-reported by the author for a plan the author also authored, and the run itself cannot be observed. **There is no independent evaluation of either tool's tracing quality.** `[UNVERIFIED]`
 
-5. **The author's real identity.** Beyond the Devpost handle `Elioz404`, the GitHub handle `Elioz`, and the git commit email `eliasemanuel.ltorres@gmail.com` `[VERIFIED-SOURCE]`, nothing is established. The Devpost profile lists Argentina `[OBSERVED-LIVE]`. **Whether this corresponds to a real, publicly-identifiable person is not established, and Argon should not assert it.** The associated YouTube channel is unconfirmed. `[UNVERIFIED]`
+5. **The author's real identity.** Beyond the Devpost handle `Elioz404`, the GitHub handle `Elioz`, and the git commit email `eliasemanuel.ltorres@gmail.com` `[VERIFIED-SOURCE]`, nothing is established. The Devpost profile lists Argentina `[OBSERVED-LIVE]`. **Whether this corresponds to a real, publicly-identifiable person is not established, and Furnish should not assert it.** The associated YouTube channel is unconfirmed. `[UNVERIFIED]`
 
 6. **Provenance of `plan-source.jpeg`.** Dimensions (2048×2048) and file size (345,425 bytes) confirmed. **Authorship is inferred from the Devpost copyright story plus visual inspection, not proven.** No EXIF examination beyond the JPEG SOF dimensions. `[UNVERIFIED]` as to origin; see §10.3 for why it does not matter.
 
@@ -816,7 +816,7 @@ Each item below was attempted and not obtained. Nothing elsewhere in this docume
 | 8 | `https://alza-dev.pages.dev/assets/main-BeLHT9JM.js` | 830,886-byte shipped bundle. Zero hits for 8 provider strings, 6 key patterns, 4 network APIs, and `fetch(`. 22 URL literals of which 2 real. 32 tool names; transport-degradation and UI strings | **HTTP 200** |
 | 9 | `https://alza-dev.pages.dev` response headers | CSP `frame-ancestors`, **`Permissions-Policy: tools=(self "https://alza-dev.netlify.app")`**, referrer-policy, nosniff, ACAO `*`, `server: cloudflare` | HTTP 200 |
 | 10 | `https://alza-dev.netlify.app` (partner) | "Nordika — furniture supplier", separate 4,991-byte bundle, **zero URL literals** | **HTTP 200** |
-| 11 | `github.com/Elioz404/Alza` — cloned at `F:\Argon\_research\alza` | Full source + README read. MIT, **4 commits**, 1 contributor, 6,534 lines. Line counts, tool names, issue codes, data model, dependency list, and **all three decisive greps re-run for this document** | Local clone (MIT) |
+| 11 | `github.com/Elioz404/Alza` — cloned at `F:\Furnish\_research\alza` | Full source + README read. MIT, **4 commits**, 1 contributor, 6,534 lines. Line counts, tool names, issue codes, data model, dependency list, and **all three decisive greps re-run for this document** | Local clone (MIT) |
 | 12 | `…/Alza/…/src/mcp/tools.ts` | 535 lines. `TRACING_PROTOCOL` (8 steps), 31 tool descriptors, `EXTEND_SELECTED_WALL`, `runToolManually` | `…/tools.ts:30-39, 41-499, 502-523, 529-533` |
 | 13 | `…/Alza/…/src/model/issues.ts` | 351 lines, **19 issue codes** extracted and counted; message templates quoted | `issues.ts` message lines 65–343 |
 | 14 | `…/Alza/…/src/model/types.ts` | 124 lines; header comment "all units are meters"; `t`-to-centre and `rotation`-is-facing conventions | `types.ts:1-124` |
@@ -838,7 +838,7 @@ Each item below was attempted and not obtained. Nothing elsewhere in this docume
 | 30 | `…/Alza/…/LICENSE` | MIT, "Copyright (c) 2026 Alza contributors" | — |
 | 31 | `…/Alza/…/.git` log | **Exactly 4 commits**: `b672279`, `72cb3c9`, `c1fbb42`, `b4d01d1` | Re-run for this document |
 | 32 | `github.com/webmachinelearning/webmcp` | Cited by Alza for open issues **#165, #50, #41, #86, #81, #161**. **The spec repo itself was not read for this document** — the issues are known only as Alza cites them | Not fetched |
-| 33 | `F:\Argon\_research\archmorph` — commit `4fb995e` | Spot-checked: `package.json` (Next 16.3.3, React 19.2.8, three ^0.185.1, Tailwind 4, `node --experimental-strip-types` test scripts); **63 distinct tool names** counted; `webmcp-tools.ts` 1,288 / `architecture.ts` 3,970 / `FloorPlan.tsx` 863 / `ModelView.tsx` 1,561; `registerTool` at `Studio.tsx:927-935` and `Hero.tsx:133-141`; `WALK_EYE_HEIGHT = 5.4`; `ALIGNMENT_TOLERANCE = 0.25`; `rebuildCanonicalTopology:1565`; `migrateProject:1829`; `PROJECT_SCHEMA_VERSION = 7` and `PROJECT_STORAGE_KEY = "archmorph.project-library.v1"` in `persistence.ts:9-10`; `planExtrusion` + `ExtrudeGeometry` at `ModelView.tsx:110-120`; feet at `README:139` and `create_room` schema at `webmcp-tools.ts:288-320`; `preview_changes`/`apply_changes` at `webmcp-tools.ts:1285-1286`; MIT; **1 commit**; ~16,272 lines | Local clone (MIT). **Tests not run; app not run** |
+| 33 | `F:\Furnish\_research\archmorph` — commit `4fb995e` | Spot-checked: `package.json` (Next 16.3.3, React 19.2.8, three ^0.185.1, Tailwind 4, `node --experimental-strip-types` test scripts); **63 distinct tool names** counted; `webmcp-tools.ts` 1,288 / `architecture.ts` 3,970 / `FloorPlan.tsx` 863 / `ModelView.tsx` 1,561; `registerTool` at `Studio.tsx:927-935` and `Hero.tsx:133-141`; `WALK_EYE_HEIGHT = 5.4`; `ALIGNMENT_TOLERANCE = 0.25`; `rebuildCanonicalTopology:1565`; `migrateProject:1829`; `PROJECT_SCHEMA_VERSION = 7` and `PROJECT_STORAGE_KEY = "archmorph.project-library.v1"` in `persistence.ts:9-10`; `planExtrusion` + `ExtrudeGeometry` at `ModelView.tsx:110-120`; feet at `README:139` and `create_room` schema at `webmcp-tools.ts:288-320`; `preview_changes`/`apply_changes` at `webmcp-tools.ts:1285-1286`; MIT; **1 commit**; ~16,272 lines | Local clone (MIT). **Tests not run; app not run** |
 | 34 | `…/archmorph/docs/UX_AUDIT_REPORT_2026-09-01.md` | Line 282: "one understandable architectural model shared across human editing, agent actions, validation, and presentation" — corroborates the author's stated hardest problem | Local file |
 | 35 | `…/archmorph/README.md` | Line 139: "Canonical project units are currently feet." Competition record + MIT + a limitations block (not BIM, not code-compliant, single-user, WebMCP evolving) | `README.md:135-152` |
 | 36 | `https://digg.com/ai/2yjnmies` | OpenAI Developers reshare introducing **both** projects: "Alza turns floor-plan photos into 2D and 3D models"; also where ArchMorph surfaced | HTTP 200 (prior session) |
@@ -846,7 +846,7 @@ Each item below was attempted and not obtained. Nothing elsewhere in this docume
 | 38 | `https://hyperframes.heygen.com/` | HeyGen video composition tool, cited by Alza's README as the film's authoring tool. **Not visited** | Not fetched |
 | 39 | `api.github.com/repos/Elioz404/Alza`, `/languages`, `/contributors`; `/repos/bornio/alza` | 13★, 7 forks, created 2026-09-01, pushed 2026-09-03, 8,429 KB, topics; TS 212,720 / JS 58,247 / CSS 10,164 / HTML 3,142 bytes; 1 contributor; **`bornio/alza` is `fork: true`, parent `Elioz404/Alza`, created 2026-09-28** | HTTP 200 (prior session) |
 | 40 | `https://modelcontextprotocol.io/specification/2025-11-25/server/tools` | MCP `ToolAnnotations` reference, cited by Alza for `destructiveHint`. **Not visited for this document** — the claim that WebMCP omits `destructiveHint` rests on Alza's `registry.ts:20-31` comment | Not fetched |
-| 41 | `F:\Argon\_research\alza-notes.md` | 616 lines of prior research, tags preserved. **Known stale items and one enumeration error identified and corrected — see §1.6 and §4.3** | Local file |
+| 41 | `F:\Furnish\_research\alza-notes.md` | 616 lines of prior research, tags preserved. **Known stale items and one enumeration error identified and corrected — see §1.6 and §4.3** | Local file |
 
 ### Sources consulted but yielding nothing load-bearing
 

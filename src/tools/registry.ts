@@ -24,9 +24,10 @@ import { DEFAULT_MATERIALS } from '../model/catalog.ts';
 import { formatArea, formatLength, wallLength } from '../model/geometry.ts';
 import { measureBuilding, measureRoom } from '../model/measure.ts';
 import { errorsOnly, validate } from '../model/validate.ts';
+import { DESIGN_STYLES, STYLE_BLURB, STYLE_LABEL, paletteFor } from '../model/palette.ts';
 import { buildScene } from '../three/sceneModel.ts';
 import { useProject, type OperationName } from '../store/useProject.ts';
-import type { Issue, Project } from '../model/types.ts';
+import type { DesignStyle, Issue, Project } from '../model/types.ts';
 import type { ResizeRoomInput } from '../model/ops.ts';
 
 export type Permission = 'read' | 'write' | 'destructive';
@@ -268,7 +269,7 @@ export const TOOLS: ToolSpec[] = [
     name: 'resize_room',
     title: 'Resize a room',
     description:
-      'Change a room\'s width and/or depth. anchor fixes which corner stays put: top-left (default), top-right, bottom-left, bottom-right or center. Give anchor only if the room must stay against a particular wall.',
+      'Change a room\'s width and/or depth. anchor fixes which corner stays put: bottom-right (default), top-left, top-right, bottom-left or center. The default keeps the bottom-right corner of the room fixed, so a room made wider grows to the left and a room made deeper grows upwards — pass anchor when the room has to stay against a particular wall.',
     permission: 'write',
     input: {
       type: 'object',
@@ -594,6 +595,78 @@ export const TOOLS: ToolSpec[] = [
   },
 
   {
+    name: 'style_home',
+    title: 'Choose the style and apply its palette',
+    description:
+      'Apply one of the five named palettes to the whole house at once: the facade, the internal walls, and every room floor (matched to how that room is actually used). The only input is which style — the colours are fixed in the app, so this never changes geometry and never picks an arbitrary colour. Also records the choice on the brief. Use list_styles to see the options and what each one is.',
+    permission: 'write',
+    input: { type: 'object', properties: { style: { type: 'string', enum: DESIGN_STYLES } }, required: ['style'] },
+    output: {
+      type: 'object',
+      properties: {
+        style: { type: 'string' },
+        exteriorWalls: { type: 'number' },
+        interiorWalls: { type: 'number' },
+        floors: { type: 'object' },
+      },
+    },
+    handler: (input) => {
+      const style = str(input.style);
+      // Refused before anything runs. A fallback palette here would let the
+      // assistant report a style the user did not ask for.
+      if (!paletteFor(style)) {
+        return {
+          ok: false,
+          summary: '',
+          error: `"${style}" is not one of the available styles.`,
+          errorCode: 'invalid_input',
+          hint: `Call list_styles. The options are: ${DESIGN_STYLES.join(', ')}.`,
+        };
+      }
+      return apply('applyStyle', [style], (data) => {
+        const r = data as { exteriorWalls: number; interiorWalls: number; floors: Record<string, number> };
+        const floorParts = Object.entries(r.floors).map(([id, n]) => `${n}× ${id}`);
+        const parts = [
+          r.exteriorWalls ? `${r.exteriorWalls} exterior wall(s)` : null,
+          r.interiorWalls ? `${r.interiorWalls} internal wall(s)` : null,
+          floorParts.length ? `${floorParts.length} floor finish(es) (${floorParts.join(', ')})` : null,
+        ].filter(Boolean);
+        return parts.length
+          ? `Applied the ${STYLE_LABEL[style as DesignStyle]} palette: ${parts.join('; ')}.`
+          : `The ${STYLE_LABEL[style as DesignStyle]} palette was already applied — nothing changed.`;
+      });
+    },
+  },
+
+  {
+    name: 'list_styles',
+    title: 'List the available style palettes',
+    description: 'The five named styles and the materials each one applies. Read this before style_home if the user has not named a style.',
+    permission: 'read',
+    input: { type: 'object', properties: {} },
+    output: { type: 'object', properties: { styles: { type: 'array' } } },
+    handler: () => {
+      const styles = DESIGN_STYLES.map((s) => {
+        const p = paletteFor(s)!;
+        return {
+          style: s,
+          label: STYLE_LABEL[s],
+          blurb: STYLE_BLURB[s],
+          exterior: DEFAULT_MATERIALS[p.exterior]?.label ?? p.exterior,
+          interior: DEFAULT_MATERIALS[p.interior]?.label ?? p.interior,
+        };
+      });
+      return {
+        ok: true,
+        summary: styles
+          .map((s) => `${s.label} (${s.style}): ${s.blurb} Facade: ${s.exterior}. Internal walls: ${s.interior}.`)
+          .join('\n'),
+        data: { styles },
+      };
+    },
+  },
+
+  {
     name: 'get_3d_scene_state',
     title: 'Read what the 3D view is showing',
     description: 'How many boxes the 3D build produced, the building bounds, and how many collision volumes the walk camera has. Useful for confirming that an edit actually reached 3D.',
@@ -629,7 +702,7 @@ export const TOOLS: ToolSpec[] = [
   {
     name: 'list_materials',
     title: 'List materials',
-    description: 'Every material Argon knows, with its id and role.',
+    description: 'Every material Furnish knows, with its id and role.',
     permission: 'read',
     input: { type: 'object', properties: {} },
     output: { type: 'object', properties: { materials: { type: 'array' } } },
@@ -657,7 +730,7 @@ export const TOOLS: ToolSpec[] = [
   {
     name: 'export_project',
     title: 'Export the project',
-    description: 'Produce the project as JSON text. This is the lossless format Argon can import back, and it is the only honest way to hand a project to someone else.',
+    description: 'Produce the project as JSON text. This is the lossless format Furnish can import back, and it is the only honest way to hand a project to someone else.',
     permission: 'read',
     input: { type: 'object', properties: { pretty: { type: 'boolean' } } },
     output: { type: 'object', properties: { json: { type: 'string' } } },

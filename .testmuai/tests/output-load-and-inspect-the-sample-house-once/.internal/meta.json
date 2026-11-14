@@ -1,0 +1,18 @@
+{
+  "test_id": "adbce60e-af10-4a8b-b377-c3c67ba015de",
+  "project_id": "01KB2TEA3SAXGRD6E2J40AN24K",
+  "folder_id": "01KB2TEA49BHZQZEGX1J3CQME4",
+  "org_id": "2910448",
+  "session_name": "load-and-inspect-the-sample-house-once",
+  "commit_id": "fe20622a-a281-4eb3-9820-ee9b75807ea1",
+  "testcase_id": "01M7DGDVPD2SGWXY5E9PAB156D",
+  "executions": [
+    {
+      "execution_id": "43c45047-5a55-4bba-8623-5b8ed8a12289",
+      "run_kind": "author",
+      "status": "broken",
+      "valid": true,
+      "at": "2026-11-14T17:07:58.495Z"
+    }
+  ]
+}

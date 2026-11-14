@@ -61,11 +61,18 @@ function at(wall: Wall, f: ReturnType<typeof wallFrame>, along: number, side: nu
 
 const clamp = (n: number, lo: number, hi: number): number => (n < lo ? lo : n > hi ? hi : n);
 
-/** Line weight by wall class. Real drawings weight the cut by what is cut. */
+/**
+ * Line weight by wall class. Real drawings weight the cut by what is cut.
+ *
+ * The values descend in value rather than in area: the cut of an exterior wall
+ * is the darkest thing on the sheet, and each weaker class steps up. Cool
+ * greys, matching the drawing palette — the near-black poché against warm
+ * browns read as a stain on the paper rather than as ink.
+ */
 export const WALL_FILL: Record<string, string> = {
-  exterior: '#2b2722',
-  interior: '#5f584c',
-  parapet: '#8d8577',
-  railing: '#a9a196',
-  boundary: '#b9b2a3',
+  exterior: '#1e293b',
+  interior: '#475569',
+  parapet: '#94a3b8',
+  railing: '#b6c1cd',
+  boundary: '#ccd5df',
 };

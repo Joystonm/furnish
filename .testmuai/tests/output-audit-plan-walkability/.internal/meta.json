@@ -1,0 +1,32 @@
+{
+  "test_id": "5bdd4844-94bb-478d-89e7-8a28519313d1",
+  "project_id": "01KB2TEA3SAXGRD6E2J40AN24K",
+  "folder_id": "01KB2TEA49BHZQZEGX1J3CQME4",
+  "org_id": "2910448",
+  "session_name": "audit-plan-walkability",
+  "commit_id": "ff518f17-e7d0-4859-b816-5072c60cb91c",
+  "testcase_id": "01M7AFTBEMPC9C7EASQ6MKN12R",
+  "executions": [
+    {
+      "execution_id": "678d53fd-acd3-4b12-bb71-90cef494b40f",
+      "run_kind": "author",
+      "status": "passed",
+      "valid": true,
+      "at": "2026-11-13T13:01:30.118Z"
+    },
+    {
+      "execution_id": "2d7957da-87de-48ca-947f-72ad056bb23e",
+      "run_kind": "replay",
+      "status": "passed",
+      "valid": true,
+      "at": "2026-11-14T12:23:13.535Z"
+    },
+    {
+      "execution_id": "aa088b6e-26cf-4fcd-b69e-b926c7ecd7ad",
+      "run_kind": "replay",
+      "status": "passed",
+      "valid": true,
+      "at": "2026-11-14T14:34:28.870Z"
+    }
+  ]
+}

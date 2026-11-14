@@ -84,7 +84,7 @@ async function viewSignature(): Promise<number> {
 }
 
 test.beforeAll(async ({ browser }) => {
-  artefacts = fs.mkdtempSync(path.join(os.tmpdir(), 'argon-e2e-'));
+  artefacts = fs.mkdtempSync(path.join(os.tmpdir(), 'furnish-e2e-'));
   context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, acceptDownloads: true });
   page = await context.newPage();
   pageErrors = [];
@@ -103,7 +103,7 @@ test.describe.configure({ mode: 'serial' });
 
 test.describe('the twelve-step demonstration', () => {
   test('1 — the application opens', async () => {
-    const response = await page.goto('/');
+    const response = await page.goto('/studio');
     expect(response?.status()).toBe(200);
     await expect(page.getByTestId('project-name')).toBeVisible();
     await expect(page.getByTestId('status-bar')).toBeVisible();
@@ -114,7 +114,21 @@ test.describe('the twelve-step demonstration', () => {
 
   test('2 — plot dimensions and home requirements are entered', async () => {
     await page.getByTestId('plot-width').fill('18');
-    await page.getByTestId('plot-depth').fill('14');
+    // 20 m deep, not the 14 m this used to ask for.
+    //
+    // 14 m of depth with the default 4.5 m front and rear setbacks leaves a
+    // 5 m band, and a band 5 m deep is too shallow for the plan the brief
+    // describes: the generator said so in four warnings and then produced a
+    // two-storey house with **no staircase at all** — the flight needs 4.4 m
+    // of run plus a landing, and the front band had no room for it and the
+    // packing left none either. The layout check caught it
+    // (`floor_disconnected`), which is the engine working, but a demonstration
+    // of a house you cannot get upstairs in is a poor advertisement for one.
+    //
+    // At 20 m the same brief produces a real house: a stairwell, a corridor
+    // and a flight, and no errors at all before the assistant has done
+    // anything.
+    await page.getByTestId('plot-depth').fill('20');
     await page.getByRole('button', { name: 'Two', exact: true }).click();
     // The wizard reports the room those numbers leave to build on.
     await expect(page.getByText(/Room to build on/)).toBeVisible();
@@ -125,11 +139,8 @@ test.describe('the twelve-step demonstration', () => {
     await page.getByTestId('room-living').check();
     await page.getByTestId('room-bedroom').check();
 
-    // Everything else is one disclosure away, not three screens.
-    await page.getByTestId('wizard-more').click();
-    await expect(page.getByTestId('pref-accessibility')).toBeVisible();
-    await page.getByTestId('pref-accessibility').click();
-    await page.getByTestId('wizard-more').click();
+    // Three bedrooms, and the storey count is the only other thing asked.
+    await page.getByTestId('room-count-bedroom').fill('3');
 
     await expect(page.getByTestId('wizard-generate')).toBeVisible();
   });
@@ -156,6 +167,15 @@ test.describe('the twelve-step demonstration', () => {
 
     // Two storeys were asked for, so the navigator has to offer both.
     expect(await page.getByTestId('floor-row').count()).toBe(2);
+
+    // And the house has to be able to get upstairs. A flight needs 4.4 m of
+    // run plus a landing at its foot, so a plot too shallow to hold one
+    // produces a two-storey house with no staircase in it — which the layout
+    // check does report, but which is not a house.
+    expect(
+      await page.locator('[data-testid="stair"]').count(),
+      'the plan must contain a staircase between the storeys',
+    ).toBeGreaterThan(0);
     await page.screenshot({ path: path.join(artefacts, '03-generated-plan.png') });
   });
 
@@ -165,13 +185,39 @@ test.describe('the twelve-step demonstration', () => {
     seen.roomId = 0;
     const roomId = target[0];
 
-    // Click inside the room but off-centre, so the click cannot land on a
-    // wall drawn across the middle of it.
+    // Click inside the room, off-centre, so the click cannot land on a wall
+    // drawn across the middle of it.
+    //
+    // Off-centre is no longer enough on its own: rooms come furnished, and the
+    // select tool deliberately picks furniture before the room behind it —
+    // a 2 cm rug is something you walk on and want to be able to grab. This
+    // used to click one fixed point and assume bare floor was under it, which
+    // stopped being true the moment `furnishFloor` put a rug there. So it tries
+    // a few points and takes the first that lands on the room, which is what
+    // the test is actually about.
     const g = page.locator(`[data-room-id="${roomId}"]`);
     const box = (await g.boundingBox())!;
-    await page.mouse.click(box.x + box.width * 0.3, box.y + box.height * 0.3);
+    const spots = [
+      [0.5, 0.5],
+      [0.3, 0.3],
+      [0.7, 0.7],
+      [0.5, 0.25],
+      [0.25, 0.6],
+      [0.6, 0.4],
+    ] as const;
 
-    await expect(page.getByTestId('room-label')).toBeVisible();
+    let picked = false;
+    for (const [fx, fy] of spots) {
+      await page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
+      // The inspector swaps to the piece that was hit, so its presence is what
+      // distinguishes a room pick from a furniture pick.
+      if (await page.getByTestId('room-label').isVisible().catch(() => false)) {
+        picked = true;
+        break;
+      }
+    }
+    expect(picked, 'clicking inside a room must reach the room inspector').toBe(true);
+
     const label = await page.inputValue('[data-testid="room-label"]');
     expect(label.length).toBeGreaterThan(0);
 
@@ -340,13 +386,21 @@ test.describe('the twelve-step demonstration', () => {
     await expect(page.locator('code', { hasText: 'room_overlap' })).toHaveCount(0);
     // A shrink, not a delete — the study is still part of the plan.
     expect((await roomsInPlan()).length).toBe(before);
+
+    // And the correction left the plan sounder than it found it. A button
+    // that clears one problem by creating two others is not a correction, so
+    // the errors are counted afterwards, not just the one that was clicked.
+    await expect(
+      page.locator('[data-testid="problems-panel"] [aria-label="error"]'),
+      'correcting the overlap must leave the plan with no errors',
+    ).toHaveCount(0);
     await page.screenshot({ path: path.join(artefacts, '10-issue-corrected.png') });
   });
 
   test('11 — the project survives a reload', async () => {
     // Make a real change, so there is genuinely something to save.
     const name = page.getByTestId('project-name');
-    await name.fill('Argon demo home');
+    await name.fill('Furnish demo home');
     const roomsBefore = (await roomsInPlan()).length;
     const netBefore = await netArea();
 
@@ -365,7 +419,7 @@ test.describe('the twelve-step demonstration', () => {
     await expect(page.getByTestId('onboarding')).toBeHidden();
     expect((await roomsInPlan()).length).toBe(roomsBefore);
     expect(await netArea()).toBeCloseTo(netBefore, 1);
-    await expect(page.getByTestId('project-name')).toHaveValue('Argon demo home');
+    await expect(page.getByTestId('project-name')).toHaveValue('Furnish demo home');
     await page.screenshot({ path: path.join(artefacts, '11-after-reload.png') });
   });
 
@@ -382,10 +436,10 @@ test.describe('the twelve-step demonstration', () => {
       project: { name: string; rooms: unknown[]; floors: unknown[]; plot: { width: number } };
     };
     // A self-describing file, so a wrong file is refused rather than half-read.
-    expect(envelope.format).toBe('argon.project');
+    expect(envelope.format).toBe('furnish.project');
     expect(typeof envelope.schemaVersion).toBe('number');
     const parsed = envelope.project;
-    expect(parsed.name).toBe('Argon demo home');
+    expect(parsed.name).toBe('Furnish demo home');
     expect(parsed.floors.length).toBeGreaterThanOrEqual(2);
     expect(parsed.plot.width).toBeCloseTo(18, 3);
 

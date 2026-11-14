@@ -180,6 +180,41 @@ describe('room geometry', () => {
     expect(codes(b.project)).not.toContain('room_overlap');
   });
 
+  it('does not report an overlap between rooms that merely graze', () => {
+    // A hairline, not an occupation.
+    //
+    // The intersection test is tolerant — rooms within a join tolerance of
+    // touching count as touching — while the area is the true one. Between
+    // them sat a gap in which two rooms sharing five millimetres of a wall
+    // were reported as an error worth "0.01 m²", with no correction that could
+    // clear it. The only button it offered was to delete a room.
+    const p = site();
+    const floorId = p.floors[0]!.id;
+    const a = createRoom(p, { floorId, kind: 'living', x: 4, y: 4, width: 4, depth: 3 });
+    if (!a.ok) throw new Error(a.error);
+    // a occupies x 4..8; b starts 5 mm short of it, so they share 5 mm of a
+    // 3 m wall — 0.015 m² of floor area.
+    const b = createRoom(a.project, { floorId, kind: 'dining', x: 7.995, y: 4, width: 4, depth: 3 });
+    if (!b.ok) throw new Error(b.error);
+    expect(codes(b.project)).not.toContain('room_overlap');
+  });
+
+  it('reports an overlap that is wider than the join tolerance, however small', () => {
+    // The other side of the same rule. Five centimetres over three metres is
+    // a strip, not a hairline, and it is a strip of doubled wall — it has to be
+    // reported, and the number in the message has to be the real one.
+    const p = site();
+    const floorId = p.floors[0]!.id;
+    const a = createRoom(p, { floorId, kind: 'living', x: 4, y: 4, width: 4, depth: 3 });
+    if (!a.ok) throw new Error(a.error);
+    const b = createRoom(a.project, { floorId, kind: 'dining', x: 7.95, y: 4, width: 4, depth: 3 });
+    if (!b.ok) throw new Error(b.error);
+
+    const issues = withCode(b.project, 'room_overlap');
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.message).toContain('overlap by 0.15 m²');
+  });
+
   it('does not report an overlap between rooms on different floors', () => {
     let p = site();
     const ground = p.floors[0]!.id;
@@ -1108,6 +1143,54 @@ describe('brief and daylight heuristics', () => {
     preferredAreas: {},
     style: 'modern',
     preferences: { accessibility: false, ventilation: false, privacy: false, daylight: false },
+  });
+
+  it('counts a guest room towards a brief that asked for a bedroom', () => {
+    // The room program is allowed to reinterpret the brief, and this is the
+    // reinterpretation it makes most often: someone says "three bedrooms" and
+    // the design gives them two plus a guest room. Flagging that as a missing
+    // room would be flagging a considered decision, and would teach people to
+    // ignore this panel.
+    let p = site();
+    const one = createRoom(p, { floorId: p.floors[0]!.id, kind: 'bedroom', x: 4, y: 4, width: 4, depth: 3 });
+    if (!one.ok) throw new Error(one.error);
+    const two = createRoom(one.project, { floorId: p.floors[0]!.id, kind: 'guest', x: 4, y: 7, width: 4, depth: 3 });
+    if (!two.ok) throw new Error(two.error);
+    const withBrief = setBrief(two.project, brief([{ kind: 'bedroom', count: 2 }]));
+    if (!withBrief.ok) throw new Error(withBrief.error);
+
+    expect(withCode(withBrief.project, 'brief_room_missing')).toEqual([]);
+  });
+
+  it('still reports a genuine miss, and names the guest room it did count', () => {
+    let p = site();
+    const bed = createRoom(p, { floorId: p.floors[0]!.id, kind: 'bedroom', x: 4, y: 4, width: 4, depth: 3 });
+    if (!bed.ok) throw new Error(bed.error);
+    const guest = createRoom(bed.project, { floorId: p.floors[0]!.id, kind: 'guest', x: 4, y: 7, width: 4, depth: 3 });
+    if (!guest.ok) throw new Error(guest.error);
+    const withBrief = setBrief(guest.project, brief([{ kind: 'bedroom', count: 3 }]));
+    if (!withBrief.ok) throw new Error(withBrief.error);
+
+    const issues = withCode(withBrief.project, 'brief_room_missing');
+    expect(issues).toHaveLength(1);
+    // It does not quietly credit the guest room: the user gets the number that
+    // was really found and is told which kind made up the difference.
+    expect(issues[0]!.message).toContain('only 2');
+    expect(issues[0]!.message).toContain('guest room');
+  });
+
+  it('does not let a room stand in for a kind it merely resembles', () => {
+    // The substitution is deliberately narrow. A study is not a living room
+    // and a garage is not a storage room, however much floor either takes.
+    let p = site();
+    const study = createRoom(p, { floorId: p.floors[0]!.id, kind: 'office', x: 4, y: 4, width: 4, depth: 3 });
+    if (!study.ok) throw new Error(study.error);
+    const withBrief = setBrief(study.project, brief([{ kind: 'living', count: 1 }]));
+    if (!withBrief.ok) throw new Error(withBrief.error);
+
+    const issues = withCode(withBrief.project, 'brief_room_missing');
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.message).toBe('The brief asked for 1 × Living room, but only 0 exist.');
   });
 
   it('reports a room the brief asked for that does not exist', () => {

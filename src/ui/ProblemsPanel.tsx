@@ -8,15 +8,32 @@
  *
  * Issues are click-to-fix where the engine could produce a deterministic
  * correction, and click-to-select where the fix needs a judgement.
+ *
+ * It also carries one thing that is not an issue and deliberately not shaped
+ * like one: who designed the plan. A clean bill of health says the geometry is
+ * sound, which is a different claim from "someone thought about this house".
+ * Filing provenance as an `Issue` would put it on the same list as a wall
+ * crossing a room, under a severity, with a fix button — none of which apply.
+ * So it sits above the list, in its own words, whenever it is worth saying.
  */
 import { useMemo, useState } from 'react';
 import { useProject } from '../store/useProject.ts';
 import { runTool } from '../tools/registry.ts';
 import { DEFAULT_RULES, errorsOnly, validate } from '../model/validate.ts';
+import { provenanceNotice } from '../model/provenance.ts';
 import type { Issue, Severity } from '../model/types.ts';
+
+// The claim itself lives in the model — the drawing and this panel must never
+// disagree about who designed the plan — but it is re-exported here because
+// this is where people look for it.
+export { provenanceNotice } from '../model/provenance.ts';
 
 const SEVERITY_ORDER: Record<Severity, number> = { error: 0, warning: 1, info: 2 };
 
+/**
+ * What to say about how this plan came to be, or null when there is nothing
+ * worth saying — see `src/model/provenance.ts`, which holds the claim itself.
+ */
 export function ProblemsPanel({ onOpenRoom }: { onOpenRoom(id: string): void }) {
   const project = useProject((s) => s.project);
   const ruleOverrides = useProject((s) => s.ruleOverrides);
@@ -27,11 +44,31 @@ export function ProblemsPanel({ onOpenRoom }: { onOpenRoom(id: string): void }) 
     [project, ruleOverrides],
   );
   const errorCount = errorsOnly(issues).length;
+  const provenance = provenanceNotice(project);
 
   return (
-    <div className="p-2">
+    <div className="p-2" data-testid="problems-panel">
+      {provenance && (
+        <div
+          className={`mb-2 rounded-card border px-3 py-2.5 text-[12px] leading-snug shadow-raised ${
+            provenance.tone === 'warn' ? 'border-warn/25 bg-warn/[0.07] text-warn' : 'border-ok/25 bg-ok/[0.07] text-ok'
+          }`}
+          data-testid="provenance-notice"
+        >
+          {provenance.text}
+          {/* Repairs and dropped constraints. Inside the provenance block rather
+              than the issue list, because they are not defects in the geometry —
+              they are notes about the program that produced it. A user told
+              "see the Checks panel" must find the thing they were sent here for. */}
+          {project.provenance?.warnings?.map((w, i) => (
+            <p key={i} className="mt-1.5 border-t border-current/15 pt-1.5 text-inkSoft" data-testid="provenance-warning">
+              {w}
+            </p>
+          ))}
+        </div>
+      )}
       <div className="mb-2 flex items-center gap-2">
-        <p className="text-[12px] text-inkSoft">
+        <p className="text-[13px] text-inkSoft">
           {issues.length === 0 ? (
             <span className="text-ok">No problems found in this plan.</span>
           ) : errorCount ? (
@@ -40,7 +77,7 @@ export function ProblemsPanel({ onOpenRoom }: { onOpenRoom(id: string): void }) 
             <><span className="text-warn">{issues.length} thing{issues.length === 1 ? '' : 's'} to look at</span></>
           )}
         </p>
-        <button className="btn btn-ghost ml-auto h-6 px-1.5 text-[11px]" onClick={() => setShowRules((v) => !v)}>
+        <button className="btn btn-ghost ml-auto px-2 text-[12px]" onClick={() => setShowRules((v) => !v)}>
           {showRules ? 'Hide' : 'Constraints'}
         </button>
       </div>
@@ -48,9 +85,9 @@ export function ProblemsPanel({ onOpenRoom }: { onOpenRoom(id: string): void }) 
       {showRules && <ConstraintRules />}
 
       {issues.length === 0 ? (
-        <div className="rounded border border-line bg-paper px-3 py-6 text-center">
-          <p className="text-[12px] text-inkSoft">Everything checks out.</p>
-          <p className="mt-1 text-[11px] leading-snug text-inkFaint">
+        <div className="card px-4 py-7 text-center">
+          <p className="text-[13px] font-medium text-ink">Everything checks out.</p>
+          <p className="mx-auto mt-1 max-w-[38ch] text-[11px] leading-snug text-inkFaint">
             Walls connect, openings fit, every room has a door, nothing overlaps and the footprint sits inside the setbacks.
           </p>
         </div>
@@ -81,22 +118,22 @@ function IssueCard({ issue, onOpenRoom }: { issue: Issue; onOpenRoom(id: string)
   };
 
   return (
-    <li className={`issue-row ${tone}`}>
+    <li className={`issue-row shadow-panel ${tone}`}>
       <button className="block w-full text-left" onClick={focus}>
-        <div className="flex items-start gap-2">
+        <div className="flex items-start gap-2.5">
           <Dot severity={issue.severity} />
           <div className="min-w-0 flex-1">
-            <p className="text-[12px] leading-snug text-ink">{issue.message}</p>
-            <code className="mt-1 inline-block text-[10px] text-inkFaint">{issue.code}</code>
+            <p className="text-[13px] leading-snug text-ink">{issue.message}</p>
+            <code className="mt-1 inline-block font-mono text-[11px] text-inkFaint">{issue.code}</code>
           </div>
         </div>
       </button>
       {issue.fixes && issue.fixes.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1 pl-5">
+        <div className="mt-2 flex flex-wrap gap-1.5 pl-6">
           {issue.fixes.map((fix, i) => (
             <button
               key={`${fix.tool}-${i}`}
-              className="btn h-6 border-dashed px-2 text-[11px]"
+              className="btn h-7 border-dashed px-2.5 text-[12px]"
               onClick={() => {
                 // Through the registry, not the store directly: these tool names
                 // are the model's vocabulary, and the registry is the only place
@@ -122,14 +159,15 @@ function IssueCard({ issue, onOpenRoom }: { issue: Issue; onOpenRoom(id: string)
 }
 
 function Dot({ severity }: { severity: Severity }) {
-  const colour = severity === 'error' ? '#b3402f' : severity === 'warning' ? '#b5842b' : '#8a8580';
-  return <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: colour }} aria-label={severity} />;
+  const colour =
+    severity === 'error' ? 'bg-danger' : severity === 'warning' ? 'bg-warn' : 'bg-inkFaint';
+  return <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${colour}`} aria-label={severity} />;
 }
 
 /**
  * Constraint overrides.
  *
- * Building regulations are not universal and Argon does not know the user's
+ * Building regulations are not universal and Furnish does not know the user's
  * jurisdiction, so nothing here is hard-coded as law. Every threshold is a
  * number the user can see and change, and the default is a plain sanity bound
  * rather than a citation.
@@ -148,7 +186,7 @@ function ConstraintRules() {
   ];
 
   return (
-    <div className="mb-2.5 rounded border border-line bg-paper p-2">
+    <div className="card mb-2.5 p-2.5 shadow-raised">
       <p className="hint mb-2">
         Defaults are geometric sanity bounds, not a building code. Adjust them to your local rules.
       </p>
@@ -159,26 +197,26 @@ function ConstraintRules() {
             <input
               type="number"
               step={f.step}
-              className="field h-6 w-20 text-right font-mono"
+              className="field w-20 text-right font-mono"
               value={effective[f.key] as number}
               onChange={(e) => setRules({ [f.key]: Number(e.target.value) } as never)}
             />
-            <span className="w-12 shrink-0 text-[10px] text-inkFaint">{f.hint}</span>
+            <span className="w-12 shrink-0 text-[11px] text-inkFaint">{f.hint}</span>
           </label>
         ))}
       </div>
-      <button className="btn mt-2 h-6 w-full justify-start text-[11px]" onClick={() => setRules({ ...DEFAULT_RULES })}>
+      <button className="btn mt-2.5 w-full justify-start text-[12px]" onClick={() => setRules({ ...DEFAULT_RULES })}>
         Reset to defaults
       </button>
 
-      <label className="mt-2 flex items-center gap-2">
+      <label className="mt-2.5 flex items-center gap-2">
         <input
           type="checkbox"
-          className="h-3 w-3 accent-[#b4622d]"
+          className="h-3.5 w-3.5 shrink-0"
           checked={effective.enforcePlotRules}
           onChange={(e) => setRules({ enforcePlotRules: e.target.checked })}
         />
-        <span className="text-[11px] text-inkSoft">Check setbacks, coverage and floor-area ratio</span>
+        <span className="text-[11px] leading-snug text-inkSoft">Check setbacks, coverage and floor-area ratio</span>
       </label>
     </div>
   );

@@ -14,10 +14,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useProject } from './store/useProject.ts';
 import { PlanCanvas } from './ui/canvas2d/PlanCanvas.tsx';
 import { Scene, captureCanvas3D } from './three/Scene.tsx';
-import { Toolbar } from './ui/Toolbar.tsx';
+import { Toolbar, ContextStrip } from './ui/Toolbar.tsx';
 import { Navigator } from './ui/Navigator.tsx';
 import { Inspector } from './ui/Inspector.tsx';
 import { ProblemsPanel } from './ui/ProblemsPanel.tsx';
+import { LedgerPanel } from './ui/LedgerPanel.tsx';
 import { StatusBar } from './ui/StatusBar.tsx';
 import { Toasts } from './ui/Toasts.tsx';
 import { Onboarding } from './ui/Onboarding.tsx';
@@ -25,9 +26,10 @@ import { AssistantPanel } from './ai/AssistantPanel.tsx';
 import { downloadPlanSvg, downloadPlanPng, downloadProjectJson, downloadScenePng } from './export/download.ts';
 import { measureBuilding } from './model/measure.ts';
 import { canViewFromInside, type RoomRect } from './three/collision.ts';
+import { DESIGN_STYLES, STYLE_BLURB, STYLE_LABEL } from './model/palette.ts';
 import type { CameraMode } from './three/Scene.tsx';
 
-type RightTab = 'inspect' | 'issues';
+type RightTab = 'inspect' | 'issues' | 'ledger';
 
 export default function App() {
   const project = useProject((s) => s.project);
@@ -38,10 +40,24 @@ export default function App() {
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [assistantOpen, setAssistantOpen] = useState(true);
-  const [onboarding, setOnboarding] = useState(() => !hasAnything(project));
+  // Whether the brief wizard is up.
+  //
+  // Driven by the store, not by a `useState` initializer. The initializer runs
+  // once, at mount, so a project started later — File → New project — would
+  // leave it `false` forever and the user would get an empty plot at a
+  // hardcoded 15 × 20 m with no question asked. `newProject` sets the store's
+  // flag instead, so every path into a fresh project asks the brief.
+  //
+  // "Change the brief" still opens it on demand, which is why this is an OR and
+  // not a straight read of the flag.
+  const awaitingBrief = useProject((s) => s.awaitingBrief);
+  const [briefRequested, setBriefRequested] = useState(() => !hasAnything(project));
+  const openBrief = () => setBriefRequested(true);
+  const onboardingOpen = awaitingBrief || briefRequested;
   const [showFurniture, setShowFurniture] = useState(true);
   const [showRoof, setShowRoof] = useState(true);
-  const [cameraMode, setCameraMode] = useState<CameraMode>('orbit');
+  const cameraMode = useProject((s) => s.cameraMode);
+  const setCameraMode = useProject((s) => s.setCameraMode);
   const [insideRoom, setInsideRoom] = useState<string | null>(null);
   const [planHandle, setPlanHandle] = useState<{ fit: () => void } | null>(null);
   const sceneHostRef = useRef<HTMLDivElement | null>(null);
@@ -50,9 +66,17 @@ export default function App() {
   // rather than leaving the user to wonder where the change went.
   const issueCount = useMemo(() => project.rooms.length + project.walls.length, [project.rooms, project.walls]);
 
+  // The panel follows the selection, but only when the selection changes.
+  //
+  // This used to list `rightTab` as a dependency as well, and that made the
+  // Checks panel unreachable: any selection — which is the normal state of an
+  // editor — pulled the panel back to Properties the instant the user clicked
+  // "Checks", so the one panel that reports what is wrong with the plan could
+  // not be read while working on the plan.
+  const selectionKey = selection.ids.join(',');
   useEffect(() => {
-    if (selection.ids.length && rightTab !== 'inspect') setRightTab('inspect');
-  }, [selection.ids.length, rightTab]);
+    if (selectionKey) setRightTab('inspect');
+  }, [selectionKey]);
 
   const onSelectIn3D = useCallback((ownerId: string, kind: string) => {
     const map: Record<string, string> = {
@@ -132,7 +156,7 @@ export default function App() {
       />
 
       <div className="flex min-h-0 flex-1">
-        {leftOpen && <Navigator onStartOver={() => setOnboarding(true)} />}
+        {leftOpen && <Navigator onStartOver={openBrief} />}
 
         <main className="relative flex min-w-0 flex-1">
           <div
@@ -163,28 +187,44 @@ export default function App() {
                 />
               </div>
             )}
+
+            {/* Floats over whichever view is up. `pointer-events-none` on the
+                wrapper so the canvas underneath stays fully draggable, with the
+                strip itself opting back in. */}
+            <div className="pointer-events-none absolute inset-x-0 top-4 z-20 flex justify-center px-4">
+              <ContextStrip />
+            </div>
           </div>
 
           {assistantOpen && <AssistantPanel onClose={() => setAssistantOpen(false)} />}
         </main>
 
         {rightOpen && (
-          <aside className="flex w-[292px] shrink-0 flex-col border-l border-line bg-surface">
-            <div className="flex h-9 shrink-0 border-b border-line" role="tablist">
+          <aside className="flex w-[300px] shrink-0 flex-col border-l border-line bg-surface">
+            <div className="flex h-10 shrink-0 border-b border-line" role="tablist">
               <button className="tab" role="tab" aria-selected={rightTab === 'inspect'} onClick={() => setRightTab('inspect')}>
                 Properties
               </button>
               <button className="tab" role="tab" aria-selected={rightTab === 'issues'} onClick={() => setRightTab('issues')}>
                 Checks
               </button>
+              <button className="tab" role="tab" aria-selected={rightTab === 'ledger'} onClick={() => setRightTab('ledger')} data-testid="tab-ledger">
+                Ledger
+              </button>
             </div>
             <div className="scroll-y min-h-0 flex-1">
-              {rightTab === 'inspect' ? <Inspector /> : <ProblemsPanel onOpenRoom={(id) => {
-                const room = project.rooms.find((r) => r.id === id);
-                if (room) useProject.getState().setActiveFloor(room.floorId);
-                useProject.getState().setSelection({ kinds: ['room'], ids: [id] });
-                setRightTab('inspect');
-              }} />}
+              {rightTab === 'inspect' ? (
+                <Inspector />
+              ) : rightTab === 'issues' ? (
+                <ProblemsPanel onOpenRoom={(id) => {
+                  const room = project.rooms.find((r) => r.id === id);
+                  if (room) useProject.getState().setActiveFloor(room.floorId);
+                  useProject.getState().setSelection({ kinds: ['room'], ids: [id] });
+                  setRightTab('inspect');
+                }} />
+              ) : (
+                <LedgerPanel />
+              )}
             </div>
           </aside>
         )}
@@ -193,7 +233,17 @@ export default function App() {
       <StatusBar measurements={measurements} />
 
       <Toasts />
-      {onboarding && <Onboarding onDone={() => setOnboarding(false)} />}
+      {onboardingOpen && (
+        // `onDone` clears both: `replace` inside the wizard already cleared
+        // `awaitingBrief`, so `briefRequested` is what would otherwise keep the
+        // wizard from ever coming back after "Change the brief".
+        <Onboarding
+          onDone={() => {
+            setBriefRequested(false);
+            useProject.getState().dismissBriefPrompt();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -213,7 +263,7 @@ function AssistantBusy() {
   return (
     <div className="pointer-events-none absolute inset-x-0 top-2 z-10 flex justify-center">
       <span
-        className="flex items-center gap-1.5 rounded-full border border-accent/30 bg-surface/90 px-2.5 py-1 text-[11px] text-inkSoft shadow-panel"
+        className="float-surface flex items-center gap-2 rounded-full px-3 py-1.5 text-[12px] font-medium text-ink"
         data-testid="assistant-canvas-busy"
       >
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
@@ -251,6 +301,13 @@ function SceneHost({
   onSelect: (id: string, kind: string) => void;
   hostRef: React.RefObject<HTMLDivElement>;
 }) {
+  const [styleOpen, setStyleOpen] = useState(false);
+  const briefStyle = useProject((s) => s.project.brief?.style);
+  // The camera bar is suppressed in split view. Half-width panes have no room
+  // for it: it sat on top of the plan side's working area, and the contextual
+  // tool strip already floats over the centre of the pair. Camera modes, roof
+  // and furniture stay reachable by switching to the full 3D view.
+  const viewMode = useProject((s) => s.viewMode);
   return (
     <div className="relative h-full w-full">
       <div ref={hostRef} className="h-full w-full">
@@ -259,11 +316,12 @@ function SceneHost({
         <Scene cameraMode={cameraMode} showFurniture={showFurniture} showRoof={showRoof && cameraMode !== 'top'} visibleFloorIds={null} onSelect={onSelect} onInsideRoom={onInsideRoom} />
       </div>
 
-      <div className="absolute left-3 top-3 flex items-center gap-1 rounded border border-line bg-surface/95 p-0.5 shadow-panel backdrop-blur">
+      {viewMode !== 'split' && (
+      <div className="float-surface absolute left-3 top-3 flex items-center gap-0.5 p-1">
         {(['orbit', 'top', 'walk', 'inside'] as CameraMode[]).map((m) => (
           <button
             key={m}
-            className="btn btn-ghost h-6 border-transparent capitalize"
+            className="btn btn-ghost h-7 border-transparent px-2.5 capitalize"
             aria-pressed={cameraMode === m}
             data-testid={`camera-${m}`}
             onClick={() => setCameraMode(m)}
@@ -271,23 +329,72 @@ function SceneHost({
             {m === 'top' ? 'Top' : m}
           </button>
         ))}
-        <span className="mx-0.5 h-4 w-px bg-line" />
-        <button className="btn btn-ghost h-6 border-transparent" aria-pressed={showFurniture} onClick={() => setShowFurniture(!showFurniture)}>
+        <span className="mx-0.5 h-5 w-px bg-line" />
+        <button className="btn btn-ghost h-7 border-transparent px-2.5" aria-pressed={showFurniture} onClick={() => setShowFurniture(!showFurniture)}>
           Furniture
         </button>
         <button
-          className={`btn btn-ghost h-6 border-transparent ${cameraMode === 'top' ? 'opacity-45' : ''}`}
+          className={`btn btn-ghost h-7 border-transparent px-2.5 ${cameraMode === 'top' ? 'opacity-45' : ''}`}
           aria-pressed={showRoof}
           title={cameraMode === 'top' ? 'The roof is hidden in the top-down view, so you can see the plan' : undefined}
           onClick={() => setShowRoof(!showRoof)}
         >
           Roof
         </button>
+        <span className="mx-0.5 h-5 w-px bg-line" />
+        <div className="relative">
+          <button
+            className="btn btn-ghost h-7 border-transparent px-2.5"
+            data-testid="style-menu"
+            aria-expanded={styleOpen}
+            title="Apply one of the five palettes"
+            onClick={() => setStyleOpen((v) => !v)}
+          >
+            Style
+          </button>
+          {styleOpen && (
+            <div
+              className="slide-up absolute left-0 top-9 z-30 w-72 rounded-card border border-line bg-surface p-1.5 shadow-pop"
+              data-testid="style-popover"
+            >
+              <p className="px-2.5 py-2 text-[11px] leading-snug text-muted">
+                A palette sets the facade, every floor finish and the joinery in one edit. You can also just ask
+                the assistant — “make it japandi”.
+              </p>
+              {DESIGN_STYLES.map((s) => {
+                const current = briefStyle === s;
+                return (
+                  <button
+                    key={s}
+                    data-testid={`style-${s}`}
+                    aria-current={current}
+                    className={`flex w-full flex-col items-start gap-1 rounded-control px-2.5 py-2 text-left transition-colors hover:bg-raised ${current ? 'bg-accent-soft' : ''}`}
+                    onClick={() => {
+                      // The same operation the assistant's `style_home` tool
+                      // runs, so a palette applied from here is undoable, logged
+                      // and attributed the same way — and the model can never
+                      // reach anything this button cannot.
+                      useProject.getState().run('applyStyle', [s], { actor: 'user', label: `Style: ${STYLE_LABEL[s]}` });
+                      setStyleOpen(false);
+                    }}
+                  >
+                    <span className="flex w-full items-center gap-1.5 text-[13px] font-medium">
+                      {STYLE_LABEL[s]}
+                      {current && <span className="chip ml-auto border-accent/30 bg-accent/10 text-[10px] text-accent-ink">current</span>}
+                    </span>
+                    <span className="text-[11px] leading-snug text-muted">{STYLE_BLURB[s]}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
+      )}
 
       {cameraMode === 'walk' && (
-        <p className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded bg-ink/85 px-3 py-1.5 text-[11px] text-paper">
-          Click the canvas to look around · W A S D to walk · Esc to leave
+        <p className="float-surface pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 text-[12px] font-medium text-ink">
+          Click the canvas to look around · drag to look · W A S D to walk · Esc to leave
         </p>
       )}
 
@@ -296,25 +403,25 @@ function SceneHost({
         // panel still turns the view; the panel itself is the only thing here
         // that takes clicks.
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-3">
-          <div className="pointer-events-auto flex max-w-[min(44rem,100%)] flex-col items-center gap-1.5 rounded-lg border border-line bg-surface/95 px-4 py-2.5 shadow-panel backdrop-blur">
-            <p className="text-[13px] font-medium text-ink" data-testid="inside-room" aria-live="polite">
+          <div className="float-surface pointer-events-auto flex max-w-[min(44rem,100%)] flex-col items-center gap-2 px-4 py-3">
+            <p className="text-[14px] font-semibold text-ink" data-testid="inside-room" aria-live="polite">
               {insideRoom ?? 'In the building'}
             </p>
-            <p className="text-[11px] text-stone-500">
+            <p className="text-[12px] text-inkSoft">
               Drag to look · W A S D to walk · scroll to step · Q E to turn · Esc to leave
             </p>
             <div className="mt-0.5 flex max-h-20 flex-wrap items-center justify-center gap-x-3 gap-y-1 overflow-y-auto">
               {interiorGroups.map((group) => (
                 <div key={group.floorId} className="flex flex-wrap items-center justify-center gap-0.5">
                   {interiorGroups.length > 1 && (
-                    <span className="mr-1 text-[10px] uppercase tracking-wide text-stone-400">{group.label}</span>
+                    <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-inkFaint">{group.label}</span>
                   )}
                   {group.rooms.map((room) => (
                     <button
                       key={room.id}
                       data-testid="inside-room-chip"
                       aria-pressed={selectedRoomId === room.id}
-                      className="btn btn-ghost h-6 border-transparent px-2 text-[11px]"
+                      className="btn btn-ghost h-7 border-transparent px-2 text-[12px]"
                       onClick={() => useProject.getState().setSelection({ kinds: ['room'], ids: [room.id] })}
                     >
                       {room.label}

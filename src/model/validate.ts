@@ -12,7 +12,7 @@
  * certification, and jurisdiction-specific rules are opt-in configuration.
  */
 import { newId } from './ids.ts';
-import { KIND_LABEL, OPENING_DEFAULTS } from './catalog.ts';
+import { KIND_LABEL, OPENING_DEFAULTS, bandsClear, itemBand } from './catalog.ts';
 import {
   TOL,
   aabbOfObb,
@@ -25,8 +25,8 @@ import {
   rectContains,
   rectContainsRect,
   rectIntersects,
+  rectIntersection,
   rectOf,
-  rectOverlapArea,
   footprintOfItem,
   wallFootprint,
   wallOBB,
@@ -119,6 +119,22 @@ function issue(
 }
 
 const label = (r?: Room): string => r ? `"${r.label}"` : 'A room';
+
+/**
+ * Which room kinds satisfy a requirement written for another kind.
+ *
+ * Only where one kind is genuinely a specialisation of another, so the
+ * substitution is defensible rather than convenient. A guest room is a bedroom
+ * that also takes visitors: private, a bed in it, a bedroom's worth of floor.
+ * Nothing else earns an entry — a study is not a living room, and a garage is
+ * not a storage room, however much floor either takes.
+ *
+ * Used only for checking the brief, never for placing geometry: the model may
+ * choose `guest` over `bedroom`, and the packer places whatever it is given.
+ */
+const BRIEF_SATISFIED_BY: Partial<Record<RoomKind, RoomKind[]>> = {
+  bedroom: ['bedroom', 'guest'],
+};
 
 /**
  * Corrective shrinks for two overlapping rooms.
@@ -418,8 +434,23 @@ export function validate(project: Project, rules: ConstraintRules = DEFAULT_RULE
       const b = project.rooms[j]!;
       if (a.floorId !== b.floorId) continue;
       if (!rectIntersects(rectOf(a), rectOf(b), TOL.join)) continue;
-      const area = rectOverlapArea(rectOf(a), rectOf(b));
-      if (area <= 0.001) continue;
+      // A graze is not an occupation.
+      //
+      // `rectIntersects` is tolerant — it treats rooms that are within a join
+      // tolerance of touching as touching — while the area that follows is the
+      // true one. Between them sat a gap: two rooms overlapping by half a
+      // millimetre over three metres were reported as an error worth
+      // "0.00 m²", with no correction that could clear it. The only button it
+      // offered was to delete one of the rooms, which is a heavy answer to a
+      // rounding artefact.
+      //
+      // So the overlap has to be real in both directions before it counts: two
+      // rooms share floor area only if they share more than the join
+      // tolerance along each axis.
+      const shared = rectIntersection(rectOf(a), rectOf(b));
+      if (!shared) continue;
+      if (shared.width <= TOL.join || shared.depth <= TOL.join) continue;
+      const area = shared.width * shared.depth;
       issues.push(
         issue(
           'room_overlap',
@@ -652,8 +683,11 @@ export function validate(project: Project, rules: ConstraintRules = DEFAULT_RULE
       if (a.floorId !== b.floorId) continue;
       const res = obbOverlap(obbOfItem(a), obbOfItem(b));
       if (!res.overlap) continue;
-      // Ignore rug/carpet overlaps: they are meant to sit under other pieces.
-      if (a.height <= 0.05 || b.height <= 0.05) continue;
+      // Two pieces only collide if their HEIGHT BANDS collide. A rug is meant
+      // to sit under other pieces, and a wall cabinet is meant to sit over a
+      // worktop — neither is an overlap, and reporting one would have the app
+      // complaining about furniture it placed itself.
+      if (bandsClear(itemBand(a.catalogId, a.height), itemBand(b.catalogId, b.height))) continue;
       issues.push(
         issue(
           'furniture_overlap',
@@ -829,13 +863,28 @@ export function validate(project: Project, rules: ConstraintRules = DEFAULT_RULE
   // ── brief satisfaction ───────────────────────────────────────────────────
   if (project.brief) {
     for (const entry of project.brief.rooms) {
-      const have = project.rooms.filter((r) => r.kind === entry.kind).length;
-      if (have < entry.count) {
+      // A room kind can be satisfied by itself or by a kind that is a
+      // specialisation of it. A guest room IS a bedroom — private, a bed in
+      // it, a bedroom's worth of floor — so someone who asked for three
+      // bedrooms and was given two plus a guest room has been given three
+      // bedrooms. Counting the literal kind alone reported that as a miss,
+      // which is both wrong and worse than useless: the model is explicitly
+      // invited to reinterpret the brief ("someone who says three bedrooms has
+      // not said whether there is an ensuite"), and flagging its answer would
+      // train people to ignore this panel.
+      const acceptable = BRIEF_SATISFIED_BY[entry.kind] ?? [entry.kind];
+      const found = project.rooms.filter((r) => acceptable.includes(r.kind));
+      if (found.length < entry.count) {
+        // Only worth saying when a substitution actually happened. A brief with
+        // no guest rooms in it has nothing to explain.
+        const swapped = found.filter((r) => r.kind !== entry.kind);
+        const extras = acceptable.filter((k) => k !== entry.kind).map((k) => KIND_LABEL[k].toLowerCase());
+        const substituted = swapped.length ? ` (${swapped.length} of them ${swapped.length === 1 ? 'is' : 'are'} ${extras.join(' or ')})` : '';
         issues.push(
           issue(
             'brief_room_missing',
             'info',
-            `The brief asked for ${entry.count} × ${KIND_LABEL[entry.kind]}, but only ${have} exist.`,
+            `The brief asked for ${entry.count} × ${KIND_LABEL[entry.kind]}, but only ${found.length}${substituted} exist.`,
             [],
             addMissingRoomFix(project, entry.kind),
           ),

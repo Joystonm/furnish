@@ -45,7 +45,7 @@ const rooms = () => page.locator('[data-room-id]').count();
 async function emptyPlot() {
   await page.context().close();
   await openContext();
-  await page.goto('/');
+  await page.goto('/studio');
   await page.getByTestId('onboarding').waitFor({ state: 'visible', timeout: 30_000 });
   await page.getByTestId('wizard-empty').click();
   await page.getByTestId('onboarding').waitFor({ state: 'hidden', timeout: 30_000 });
@@ -92,7 +92,7 @@ test.describe('the assistant against a live endpoint', () => {
     // commit, and the test would have been measuring the test.
     await page.evaluate(() => {
       const trace: number[] = [];
-      (window as unknown as { __argonRooms: number[] }).__argonRooms = trace;
+      (window as unknown as { __furnishRooms: number[] }).__furnishRooms = trace;
       const tick = (): void => {
         trace.push(document.querySelectorAll('[data-room-id]').length);
         if (trace.length < 4000) requestAnimationFrame(tick);
@@ -111,7 +111,7 @@ test.describe('the assistant against a live endpoint', () => {
     await expect(async () => expect(await rooms()).toBe(6)).toPass({ timeout: 60_000 });
     await page.waitForTimeout(1500);
 
-    const trace: number[] = await page.evaluate(() => (window as unknown as { __argonRooms: number[] }).__argonRooms);
+    const trace: number[] = await page.evaluate(() => (window as unknown as { __furnishRooms: number[] }).__furnishRooms);
     const distinct = [...new Set(trace)].sort((a, b) => a - b);
 
     // Six operations, six frames that added a room. A plan committed in one go

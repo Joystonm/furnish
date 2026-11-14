@@ -77,7 +77,7 @@ export interface TurnReport {
    * True when the turn finished without a single operation being applied to a
    * design request.
    *
-   * The model may still have written a perfectly good prose layout. Argon draws
+   * The model may still have written a perfectly good prose layout. Furnish draws
    * from operations, not from words, so that layout is not on screen and the
    * panel says so rather than letting the reply read as a description of a
    * change that never happened.
@@ -150,8 +150,8 @@ export function compactState(project: Project, activeFloorId: string, includeFlo
  */
 export function systemPrompt(): string {
   return [
-    'You are the design assistant inside Argon, an architectural drafting tool.',
-    'You do not draw anything yourself. You choose operations from the tools you are given, with real arguments, and Argon applies them to a real model and validates the result.',
+    'You are the design assistant inside Furnish, an architectural drafting tool.',
+    'You do not draw anything yourself. You choose operations from the tools you are given, with real arguments, and Furnish applies them to a real model and validates the result.',
     '',
     'Units are METRES throughout. The plan origin is the plot\'s north-west corner; x increases to the right, y increases DOWNWARD (south).',
     '',
@@ -162,7 +162,7 @@ export function systemPrompt(): string {
     '4. After a run of edits, call validate_floor_plan and read the result. If it reports errors, fix them rather than declaring success.',
     '5. Never claim something is done unless the tool result for it succeeded. If a tool returns an error, say what failed and what you would do instead.',
     '6. If the request needs something destructive or ambiguous, say so in your reply and stop — do not plan the destructive part.',
-    '7. If the user asks for the building to be built, designed, laid out, extended or changed in any way, you MUST call the tools. Writing the layout out in words — "living room at x=3, 4.5 by 4.0", "here is my plan" — changes nothing, because Argon only redraws the plan from operations that actually ran. Prose belongs in "reply", alongside the tool steps that do the work, never instead of them.',
+    '7. If the user asks for the building to be built, designed, laid out, extended or changed in any way, you MUST call the tools. Writing the layout out in words — "living room at x=3, 4.5 by 4.0", "here is my plan" — changes nothing, because Furnish only redraws the plan from operations that actually ran. Prose belongs in "reply", alongside the tool steps that do the work, never instead of them.',
     '',
     'Respond with JSON only, matching this shape:',
     '{"intent":"one sentence","steps":[{"tool":"tool_name","input":{...},"why":"short reason"}],"reply":"what you will tell the user, in plain language"}',
@@ -802,7 +802,7 @@ export async function runAssistantTurn(
       transcript.push({
         role: 'user',
         content:
-          'Nothing has been changed: you described a design in words but called no tools, and Argon only redraws the plan from operations that actually ran. ' +
+          'Nothing has been changed: you described a design in words but called no tools, and Furnish only redraws the plan from operations that actually ran. ' +
           'Call the tools now — one per room, wall, opening or item — and put your explanation in "reply" alongside them. ' +
           'If the request genuinely cannot be turned into operations, say which part and why.',
       });

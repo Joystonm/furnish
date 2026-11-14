@@ -19,7 +19,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 /** Generates the default design and switches to the 3D view. */
 async function start(page: Page) {
-  await page.goto('/');
+  await page.goto('/studio');
   await page.getByTestId('plot-width').fill('18');
   await page.getByTestId('plot-depth').fill('14');
   await page.getByRole('button', { name: 'Two', exact: true }).click();

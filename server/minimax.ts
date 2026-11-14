@@ -87,8 +87,21 @@ export class MiniMaxError extends Error {
   }
 }
 
+/**
+ * Whether the AI layer has been switched off by configuration.
+ *
+ * Both spellings are honoured. `FURNISH_DISABLE_AI` is the current one;
+ * `ARGON_DISABLE_AI` is what the product was called before the rename, and a
+ * `.env` file written against that name must keep switching the AI off. The
+ * failure mode of dropping it is not a warning — it is a deployment that
+ * silently starts making real, billed API calls it was told not to make.
+ */
+export function aiDisabledByConfig(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.FURNISH_DISABLE_AI === 'true' || env.ARGON_DISABLE_AI === 'true';
+}
+
 export function isConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
-  if (env.ARGON_DISABLE_AI === 'true') return false;
+  if (aiDisabledByConfig(env)) return false;
   return Boolean(env.MINIMAX_API_KEY && env.MINIMAX_API_KEY.trim().length > 0);
 }
 
@@ -106,7 +119,13 @@ export function clientConfig(env: NodeJS.ProcessEnv = process.env): ClientConfig
     apiKey: (env.MINIMAX_API_KEY || '').trim(),
     baseUrl: base,
     model: (env.MINIMAX_MODEL || 'MiniMax-M3').trim(),
-    timeoutMs: Number(env.MINIMAX_TIMEOUT_MS || 90_000),
+    // 90 s was sized for a chat turn. The room-program call is the one request
+    // where the reasoning IS the product, and MiniMax-M3 with thinking on
+    // measured over 90 s for an 8-room program — so the default is raised to
+    // three minutes, which the call above finished inside. Still overridable,
+    // and still bounded: an unbounded wait on a button is worse than a clear
+    // failure, and the fallback exists precisely for this.
+    timeoutMs: Number(env.MINIMAX_TIMEOUT_MS || 180_000),
     maxRetries: Number(env.MINIMAX_MAX_RETRIES || 2),
   };
 }

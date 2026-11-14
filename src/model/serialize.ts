@@ -1,7 +1,7 @@
 /**
  * Project serialization: JSON round-trip with validation.
  *
- * Import is deliberately strict. A file that does not describe a real Argon
+ * Import is deliberately strict. A file that does not describe a real Furnish
  * project is rejected with a readable reason rather than half-loaded — a
  * half-loaded architectural model produces confidently wrong geometry, which is
  * worse than a clear failure.
@@ -9,8 +9,23 @@
 import { SCHEMA_VERSION, type Project } from './types.ts';
 import { DEFAULT_MATERIALS } from './catalog.ts';
 
+/** The format tag written on every export. */
+export const PROJECT_FORMAT = 'furnish.project';
+
+/**
+ * Format tags this build still accepts on import.
+ *
+ * `argon.project` is what the product wrote before it was renamed. It is still
+ * read on purpose: a file format that stops opening the moment the app is
+ * renamed is data loss wearing a rename's clothes, and the whole point of the
+ * export is that someone can hand a project to someone else. Exports written
+ * from here on carry the new tag; anything the old build produced still opens,
+ * and re-exporting upgrades it.
+ */
+const ACCEPTED_FORMATS: ReadonlySet<string> = new Set([PROJECT_FORMAT, 'argon.project']);
+
 export interface SerializedProject {
-  format: 'argon.project';
+  format: typeof PROJECT_FORMAT;
   schemaVersion: number;
   exportedAt: string;
   project: Project;
@@ -24,7 +39,7 @@ export interface ImportResult {
 
 export function toJSON(project: Project, pretty = true): string {
   const payload: SerializedProject = {
-    format: 'argon.project',
+    format: PROJECT_FORMAT,
     schemaVersion: SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
     project: project,
@@ -51,13 +66,13 @@ export function fromJSON(text: string): ImportResult {
   }
 
   if (!isObj(raw)) return { ok: false, error: 'That file does not contain a project object.' };
-  if (raw.format !== 'argon.project') {
-    return { ok: false, error: `Unrecognised file format. Expected an Argon project export ("format": "argon.project").` };
+  if (!str(raw.format) || !ACCEPTED_FORMATS.has(raw.format)) {
+    return { ok: false, error: `Unrecognised file format. Expected a Furnish project export ("format": "${PROJECT_FORMAT}").` };
   }
   if (num(raw.schemaVersion) && raw.schemaVersion > SCHEMA_VERSION) {
     return {
       ok: false,
-      error: `This project was saved by a newer version of Argon (schema v${raw.schemaVersion}, this build supports v${SCHEMA_VERSION}). Update Argon to open it.`,
+      error: `This project was saved by a newer version of Furnish (schema v${raw.schemaVersion}, this build supports v${SCHEMA_VERSION}). Update Furnish to open it.`,
     };
   }
   if (!isObj(raw.project)) return { ok: false, error: 'The export is missing its "project" field.' };

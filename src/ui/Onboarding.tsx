@@ -5,61 +5,107 @@
  * was defensible and none of them was needed in order to *see* a plan. Someone
  * opening this wants a floor plan, not a survey. So the screen now asks the two
  * things that actually change the geometry — how big the plot is and which
- * rooms are wanted — and puts everything else behind one disclosure, defaulted
- * and untouched. The three starts sit on the same screen, because choosing
- * between "generate it", "give me a grid" and "just the plot" is a decision,
- * not a step.
+ * rooms are wanted — and leaves everything else at its default. The three
+ * starts sit on the same screen, because choosing between "generate it", "give
+ * me a grid" and "just the plot" is a decision, not a step.
  *
- * Nothing here talks to a model. The wizard produces a `DesignBrief`, and
- * `generateFromBrief` turns that into geometry with deterministic code. If the
- * assistant is switched off entirely, the whole flow still works.
+ * There used to be a "More options" disclosure holding units, street edge,
+ * setbacks, room sizes, style, budget and comfort. It is gone: every one of
+ * those had a default nobody was going to change, and a closed disclosure with
+ * an inventory of what is inside it is a promise of a questionnaire. The cost
+ * is real and worth stating plainly — on a new project the brief now always
+ * arrives with DEFAULT_PLOT's setbacks, `contemporary` style, metric units and
+ * ventilation and daylight on. A brief can still carry all of that (the type
+ * has the fields, `initialBrief` still seeds them, and "Change the brief"
+ * reopens this screen), but nothing on this screen sets them any more.
+ *
+ * The wizard produces a `DesignBrief`, and `generateFromBrief` turns that into
+ * geometry with deterministic code. That part has not changed and never will:
+ * the model is given no coordinate, no orientation and no way to place a room.
+ *
+ * What Generate now does first is ask MiniMax to plan the ROOM PROGRAM — which
+ * rooms, how big, and which must be next to each other — and hand that to the
+ * same packer. If the assistant is switched off, or MiniMax is unreachable, or
+ * the program it returned is unusable, Generate still works: it falls back to
+ * the brief's own defaults and says, in a warning toast that is styled like
+ * neither success nor error, that no model planned the result.
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useProject } from '../store/useProject.ts';
 import { emptyFromBrief, generateFromBrief, gridFromBrief } from '../model/layout.ts';
+import { requestRoomProgram } from '../ai/planProgram.ts';
 import { DEFAULT_ROOM_AREA, KIND_LABEL } from '../model/catalog.ts';
-import { formatArea } from '../model/geometry.ts';
 import { DEFAULT_PLOT } from '../model/ops.ts';
-import type { DesignBrief, DesignStyle, RoomKind } from '../model/types.ts';
+import { sampleProject } from '../model/sample.ts';
+import type { DesignBrief, RoomKind } from '../model/types.ts';
 
-/** Room kinds worth offering, in the order a house is usually described. */
-const OFFERED: RoomKind[] = [
-  'living', 'kitchen', 'dining', 'bedroom', 'bathroom', 'guest',
-  'office', 'prayer', 'storage', 'utility', 'garage', 'balcony', 'terrace',
+/**
+ * The rooms on offer, grouped by how much they matter to a house.
+ *
+ * This was one flat list of thirteen, which put "Garage" next to "Living room"
+ * and made a screen anyone skims look like a form to be endured. Four kinds
+ * make a house a house, six are a decision, and three happen outdoors — and
+ * knowing which group you are in is most of what tells you whether you have
+ * filled it in properly.
+ *
+ * Order within a group is the order a house is usually described.
+ */
+const GROUPS: Array<{ label: string; note: string; kinds: RoomKind[] }> = [
+  {
+    label: 'The basics',
+    note: 'Start here — a house needs these four.',
+    kinds: ['living', 'kitchen', 'bedroom', 'bathroom'],
+  },
+  {
+    label: 'More rooms',
+    note: 'Optional. Add only what you actually want.',
+    kinds: ['dining', 'guest', 'office', 'prayer', 'storage', 'utility'],
+  },
+  {
+    label: 'Outside the walls',
+    note: 'Built on the plot, not inside the house.',
+    kinds: ['garage', 'balcony', 'terrace'],
+  },
 ];
 
-const STYLE_LABEL: Record<DesignStyle, string> = {
-  modern: 'Modern',
-  contemporary: 'Contemporary',
-  traditional: 'Traditional',
-  minimalist: 'Minimalist',
-  japandi: 'Japandi',
-};
-
-const STYLE_NOTE: Record<DesignStyle, string> = {
-  modern: 'Open plans, big glazing, clean lines.',
-  contemporary: 'Soft neutrals, generous light, simple volumes.',
-  traditional: 'Separate rooms, a defined entrance, warmer materials.',
-  minimalist: 'Few rooms, each one generous. Nothing decorative.',
-  japandi: 'Low furniture, natural materials, calm and uncluttered.',
-};
-
-function initialBrief(): DesignBrief {
+/**
+ * The brief the wizard opens on.
+ *
+ * Seeded from `DEFAULT_PLOT`, never from the project being replaced. Carrying
+ * the old plot over would make "New project" look like it did nothing at all —
+ * the same plot size, the same setbacks — which is precisely the complaint that
+ * sent this here: a fresh project had to be told apart from the last one.
+ *
+ * What *is* carried over is the room list, and only when there is one: someone
+ * who asked for three bedrooms and then starts again almost certainly wants
+ * three bedrooms, and re-ticking eight boxes is the opposite of a short brief.
+ */
+function initialBrief(previous?: DesignBrief | null): DesignBrief {
+  const rooms =
+    previous?.rooms?.length
+      ? previous.rooms.map((r) => ({ ...r }))
+      : [
+          // One of each of the four basics, and every count is 1.
+          //
+          // Three bedrooms was here because 80 m² of rooms sits neatly inside a
+          // 99 m² envelope, so the untouched screen opened with no warning — but
+          // it made the first number a stranger has to read on this screen a
+          // decision they never made, and three is also the count most likely to
+          // be wrong for a particular person. A number they did not type is an
+          // opinion; a 1 beside a checkbox they can see is not. More bedrooms is
+          // one keystroke in the count box, and nothing here is flagged either
+          // way now that fewer rooms can only lower the total.
+          { kind: 'living' as RoomKind, count: 1 },
+          { kind: 'kitchen' as RoomKind, count: 1 },
+          { kind: 'bedroom' as RoomKind, count: 1 },
+          { kind: 'bathroom' as RoomKind, count: 1 },
+        ];
   return {
     plot: { ...DEFAULT_PLOT, setbacks: { ...DEFAULT_PLOT.setbacks } },
-    floorCount: 1,
-    // 80 m² of rooms against a 99 m² envelope. This is a real three-bedroom
-    // house, and it is deliberately chosen so the untouched screen opens with
-    // nothing flagged: a warning about a brief the user has not written yet is
-    // the wrong first impression of a form that is meant to feel easy.
-    rooms: [
-      { kind: 'living', count: 1 },
-      { kind: 'kitchen', count: 1 },
-      { kind: 'bedroom', count: 3 },
-      { kind: 'bathroom', count: 1 },
-    ],
+    floorCount: previous?.floorCount ?? 1,
+    rooms,
     preferredAreas: {},
-    style: 'contemporary',
+    style: previous?.style ?? 'contemporary',
     budgetUsd: undefined,
     preferences: { accessibility: false, ventilation: true, privacy: false, daylight: true },
   };
@@ -67,14 +113,18 @@ function initialBrief(): DesignBrief {
 
 export function Onboarding({ onDone }: { onDone(): void }) {
   const project = useProject((s) => s.project);
-  const [brief, setBrief] = useState<DesignBrief>(initialBrief);
-  const [units, setUnits] = useState<'m' | 'ft'>('m');
-  const [more, setMore] = useState(false);
+  // Lazy initialiser: this reads the project that was current when the wizard
+  // opened, which is the one being replaced. Using the previous project's room
+  // list is the reuse above; its plot deliberately is not.
+  const [brief, setBrief] = useState<DesignBrief>(() => initialBrief(project.brief));
+  const [planning, setPlanning] = useState(false);
+  // A ref, not the `planning` state, guards the button: state does not update
+  // until the render commits, so a fast double click would still fire two
+  // requests and replace the project twice.
+  const inFlight = useRef(false);
 
   const patch = (p: Partial<DesignBrief>) => setBrief((b) => ({ ...b, ...p }));
   const sb = brief.plot.setbacks;
-  const setSetback = (side: keyof typeof sb, v: number) =>
-    setBrief((b) => ({ ...b, plot: { ...b.plot, setbacks: { ...b.plot.setbacks, [side]: v } } }));
 
   const buildableW = brief.plot.width - sb.left - sb.right;
   const buildableD = brief.plot.depth - sb.front - sb.rear;
@@ -83,9 +133,38 @@ export function Onboarding({ onDone }: { onDone(): void }) {
   const tight = buildableW < 4 || buildableD < 4;
   const overBudgetArea = targetArea > buildableW * buildableD * storeys * 0.82;
 
-  const generate = () => {
+  /**
+   * Generate: ask the model to plan the rooms, then let the packer place them.
+   *
+   * The model never draws. It returns room sizes and which rooms must be next
+   * to each other; `generateFromBrief` still does every piece of geometry, the
+   * same way it always has. If the model cannot be reached, the plan is still
+   * produced — but the toast says in as many words that nobody designed it,
+   * because a deterministic default plan that reads like a considered design is
+   * the exact thing this app must not ship.
+   */
+  const generate = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setPlanning(true);
+    const outcome = await requestRoomProgram(brief);
+    inFlight.current = false;
+    setPlanning(false);
     const store = useProject.getState();
-    const res = generateFromBrief(project, brief);
+    // Read out before the generate call, because the generator stamps them and
+    // the toast needs the packer's own warnings too.
+    const programWarnings = outcome.planned ? outcome.warnings : [];
+
+    // The note is recorded on the project, not just toasted, so the Checks
+    // panel keeps saying who chose these rooms for as long as the project
+    // exists. Passing it as an option is what keeps the two in step: the
+    // generator decides `plannedBy` from the one thing that cannot be faked.
+    const res = generateFromBrief(project, brief, {
+      ...(outcome.planned ? { program: outcome.program } : {}),
+      provenanceNote: outcome.planned
+        ? { summary: outcome.summary, warnings: programWarnings }
+        : { reason: outcome.reason },
+    });
     if (!res.ok) {
       store.toast('error', res.error);
       return;
@@ -93,12 +172,34 @@ export function Onboarding({ onDone }: { onDone(): void }) {
     store.replace(res.data.project, 'Generate from brief');
     store.setSelection({ kinds: [], ids: [] });
     store.setActiveFloor(res.data.project.floors[0]?.id ?? '');
-    const w = res.data.report.warnings;
+
+    const roomCount = res.data.project.rooms.filter((r) => !r.outdoor).length;
+    const warnings = [...programWarnings, ...res.data.report.warnings];
+    const storeys = storeyCount(brief.floorCount);
+
+    if (!outcome.planned) {
+      // Loud, and first. The plan below it is real, but it was not designed.
+      // What follows the reason is a plain description of what the fallback
+      // does, so the user knows exactly what they are looking at — no
+      // ensuite, no guest room, and every room of a kind the same size.
+      store.toast(
+        'warning',
+        `No model planned this layout — ${outcome.reason} Furnish fell back to its catalogue room sizes, so rooms of the same kind came out the same size and none were placed next to each other on purpose. ${roomCount} rooms on ${storeys}.${
+          outcome.unconfigured ? ' Set MINIMAX_API_KEY on the server to have the design planned for you.' : ''
+        }`,
+      );
+      onDone();
+      return;
+    }
+
+    const what = outcome.summary
+      ? `MiniMax planned it: ${outcome.summary}`
+      : `MiniMax planned ${outcome.program.rooms.length} rooms`;
     store.toast(
-      w.length ? 'info' : 'success',
-      w.length
-        ? `Planned ${storeyCount(brief.floorCount)} storey${brief.floorCount === 1 ? '' : 's'} — ${w[0]}${w.length > 1 ? ` (+${w.length - 1} more)` : ''}. See the Checks panel.`
-        : `Planned ${storeyCount(brief.floorCount)} ${brief.floorCount === 1 ? 'storey' : 'storeys'} with ${res.data.project.rooms.length} rooms. Drag anything you want to change.`,
+      warnings.length ? 'info' : 'success',
+      warnings.length
+        ? `${what}. ${warnings[0]}${warnings.length > 1 ? ` (+${warnings.length - 1} more)` : ''} See the Checks panel.`
+        : `${what}. ${roomCount} rooms on ${storeys} — drag anything you want to change.`,
     );
     onDone();
   };
@@ -131,6 +232,36 @@ export function Onboarding({ onDone }: { onDone(): void }) {
     onDone();
   };
 
+  /**
+   * Load the sample house.
+   *
+   * The plan the landing page draws, built by the same generator with no model
+   * involved — so it is the same plan every time it is loaded, which is what
+   * makes it useful for comparing one run with another. It replaces whatever
+   * was open, so it is a start, like the other two.
+   */
+  const loadSample = () => {
+    const store = useProject.getState();
+    const res = sampleProject();
+    if (!res.ok) {
+      store.toast('error', res.error);
+      return;
+    }
+    store.replace(res.data.project, 'Load the sample plan');
+    store.setSelection({ kinds: [], ids: [] });
+    store.setActiveFloor(res.data.project.floors[0]?.id ?? '');
+    const floors = res.data.project.floors.length;
+    const rooms = res.data.project.rooms.filter((r) => !r.outdoor).length;
+    const w = res.data.report.warnings;
+    store.toast(
+      w.length ? 'info' : 'success',
+      w.length
+        ? `The sample house — ${rooms} rooms on ${storeyCount(floors)} ${floors === 1 ? 'floor' : 'floors'}. ${w[0]}`
+        : `The sample house — ${rooms} rooms on ${storeyCount(floors)} ${floors === 1 ? 'floor' : 'floors'}. No model planned this one: it is the plan the landing page draws.`,
+    );
+    onDone();
+  };
+
   const startEmpty = () => {
     const store = useProject.getState();
     const res = emptyFromBrief(project, brief);
@@ -150,256 +281,149 @@ export function Onboarding({ onDone }: { onDone(): void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/25 p-6" role="dialog" aria-modal="true" aria-label="Plan your home">
-      <div className="slide-up flex max-h-full w-full max-w-[720px] flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-pop" data-testid="onboarding">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Plan your home">
+      <div className="slide-up flex max-h-full w-full max-w-[760px] flex-col overflow-hidden rounded-card border border-line bg-surface shadow-pop" data-testid="onboarding">
         {/* ── header ── */}
-        <header className="flex shrink-0 items-center gap-3 border-b border-line px-5 py-3">
+        <header className="flex shrink-0 items-start gap-4 border-b border-line px-6 py-4">
           <div className="min-w-0 flex-1">
-            <h1 className="text-[15px] font-semibold tracking-tight text-ink">Plan your home</h1>
-            <p className="hint mt-0.5">Everything has a sensible default. Change what matters, ignore the rest.</p>
+            <h1 className="text-[19px] font-semibold tracking-[-0.01em] text-ink">Plan your home</h1>
+            <p className="hint mt-1">A plot and a list of rooms is enough to start. Everything else has a default.</p>
           </div>
-          <button className="btn btn-ghost" onClick={onDone} data-testid="onboarding-skip">
+          <button className="btn btn-ghost shrink-0" onClick={onDone} data-testid="onboarding-skip">
             {project.rooms.length ? 'Close' : 'Start empty'}
           </button>
         </header>
 
         {/* ── body ── */}
-        <div className="scroll-y min-h-0 flex-1 px-5 py-4">
-          {/* Plot and storeys, side by side. These two and the room list below
-              are the whole of what changes the geometry on first run. */}
-          <div className="flex flex-wrap items-end gap-x-5 gap-y-3">
-            <Field label="Plot" hint="Across the street, and street to back." className="w-[188px]">
-              <div className="flex items-center gap-1.5">
-                <Num value={brief.plot.width} units={units} onChange={(v) => patch({ plot: { ...brief.plot, width: v } })} testId="plot-width" />
-                <span className="text-[11px] text-inkFaint">×</span>
-                <Num value={brief.plot.depth} units={units} onChange={(v) => patch({ plot: { ...brief.plot, depth: v } })} testId="plot-depth" />
+        <div className="scroll-y min-h-0 flex-1 px-6 py-5">
+          {/* Three cards rather than three fields in a row. What is left after
+              the setbacks is a fact about the site, not another thing to type,
+              and showing it as a number beside the inputs is what makes the
+              tradeoff legible: widen the plot and that number goes up. */}
+          <div className="grid gap-3 sm:grid-cols-[1.15fr_0.95fr_0.9fr]">
+            <section className="card bg-raised p-4">
+              <h2 className="label">Plot</h2>
+              <div className="mt-2.5 flex items-end gap-2">
+                <span className="min-w-0 flex-1">
+                  <span className="mb-1 block text-[11px] text-inkFaint">Width</span>
+                  <Num value={brief.plot.width} units="m" onChange={(v) => patch({ plot: { ...brief.plot, width: v } })} testId="plot-width" />
+                </span>
+                <span className="pb-2 text-[13px] text-inkFaint">×</span>
+                <span className="min-w-0 flex-1">
+                  <span className="mb-1 block text-[11px] text-inkFaint">Depth</span>
+                  <Num value={brief.plot.depth} units="m" onChange={(v) => patch({ plot: { ...brief.plot, depth: v } })} testId="plot-depth" />
+                </span>
               </div>
-            </Field>
+            </section>
 
-            <Field label="Storeys" className="w-auto">
-              <Segmented
-                value={String(brief.floorCount)}
-                onChange={(v) => patch({ floorCount: Number(v) })}
-                options={[
-                  { id: '1', label: 'One' },
-                  { id: '2', label: 'Two' },
-                  { id: '3', label: 'Three' },
-                ]}
-              />
-            </Field>
+            <section className="card bg-raised p-4">
+              <h2 className="label">Storeys</h2>
+              <div className="mt-2.5">
+                <Segmented
+                  value={String(brief.floorCount)}
+                  onChange={(v) => patch({ floorCount: Number(v) })}
+                  options={[
+                    { id: '1', label: 'One' },
+                    { id: '2', label: 'Two' },
+                    { id: '3', label: 'Three' },
+                  ]}
+                />
+              </div>
+            </section>
 
-            <p className="min-w-0 flex-1 text-[11px] leading-snug text-inkFaint">
-              Room to build on: <span className="metric text-inkSoft">{formatArea(buildableW * buildableD, 'm')}</span> per floor
-              {tight && <span className="ml-1 text-danger">— the setbacks leave almost nothing. Set them to zero below.</span>}
-            </p>
-          </div>
-
-          {/* Rooms. */}
-          <Field label="What do you need?" hint="Argon fits these to your plot. Sizes come afterwards if you want them.">
-            <div className="grid grid-cols-3 gap-x-5">
-              {OFFERED.map((kind) => {
-                const entry = brief.rooms.find((r) => r.kind === kind);
-                const on = Boolean(entry);
-                return (
-                  <div key={kind} className="flex items-center gap-2 border-b border-line py-1.5">
-                    <input
-                      type="checkbox"
-                      className="h-3.5 w-3.5 shrink-0 accent-[#b4622d]"
-                      checked={on}
-                      data-testid={`room-${kind}`}
-                      onChange={(e) =>
-                        setBrief((b) => ({
-                          ...b,
-                          rooms: e.target.checked
-                            ? [...b.rooms, { kind, count: 1 }]
-                            : b.rooms.filter((r) => r.kind !== kind),
-                        }))
-                      }
-                    />
-                    <span className={on ? 'min-w-0 flex-1 text-[12px] text-ink' : 'min-w-0 flex-1 text-[12px] text-inkFaint'}>{KIND_LABEL[kind]}</span>
-                    {on && (
-                      <input
-                        type="number"
-                        min={1}
-                        max={9}
-                        className="field h-6 w-11 text-center font-mono"
-                        value={entry?.count ?? 1}
-                        data-testid={`room-count-${kind}`}
-                        onChange={(e) => {
-                          const count = Math.max(1, Math.min(9, Math.round(Number(e.target.value) || 1)));
-                          setBrief((b) => ({ ...b, rooms: b.rooms.map((r) => (r.kind === kind ? { ...r, count } : r)) }));
-                        }}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            {brief.rooms.length === 0 && <p className="hint mt-2 text-warn">Pick at least a living room so there is something to plan.</p>}
-            {overBudgetArea && (
-              <p className="mt-2 text-[11px] leading-snug text-warn">
-                That is more than fits comfortably. Argon will scale the rooms down rather than overflow your plot — or add a
-                storey, or drop a room.
+            <section className="card bg-raised p-4">
+              <h2 className="label">Room to build on</h2>
+              <p className="mt-2.5 flex items-baseline gap-1.5">
+                <span className="metric text-[17px]">{Math.round(buildableW * buildableD)}</span>
+                <span className="text-[12px] text-inkFaint">m² per floor</span>
               </p>
-            )}
-          </Field>
-
-          {/* ── everything else, on request ── */}
-          <div className="mt-4 border-t border-line pt-3">
-            <button
-              className="flex items-center gap-1.5 text-[12px] text-inkSoft"
-              aria-expanded={more}
-              onClick={() => setMore((m) => !m)}
-              data-testid="wizard-more"
-            >
-              <svg width="9" height="9" viewBox="0 0 9 9" aria-hidden className={`transition-transform ${more ? 'rotate-90' : ''}`}>
-                <path d="M2 1l4 3.5L2 8z" fill="currentColor" />
-              </svg>
-              {more ? 'Hide the rest' : 'More options — units, street edge, setbacks, room sizes, style, comfort'}
-            </button>
-
-            {more && (
-              <div className="mt-3" data-testid="wizard-more-body">
-                <Field label="Units" hint="Everything is stored in metres. This only changes how numbers are displayed and typed.">
-                  <Segmented
-                    value={units}
-                    onChange={(v) => setUnits(v as 'm' | 'ft')}
-                    options={[{ id: 'm', label: 'Metric (m)' }, { id: 'ft', label: 'Imperial (ft)' }]}
-                  />
-                </Field>
-
-                <Field label="Street on the" hint="Which edge the front door faces. Argon treats that side as the entrance and gives it the biggest windows.">
-                  <Segmented
-                    value={String(brief.plot.orientation)}
-                    onChange={(v) => patch({ plot: { ...brief.plot, orientation: Number(v) as 0 | 90 | 180 | 270 } })}
-                    options={[
-                      { id: '0', label: 'Top' },
-                      { id: '90', label: 'Right' },
-                      { id: '180', label: 'Bottom' },
-                      { id: '270', label: 'Left' },
-                    ]}
-                  />
-                </Field>
-
-                <Field label="Setbacks" hint="How far the building must stay from each edge. Set them to zero if there is no rule you need to respect.">
-                  <div className="grid grid-cols-4 gap-2">
-                    {(['front', 'rear', 'left', 'right'] as const).map((side) => (
-                      <label key={side} className="block">
-                        <span className="label mb-1 capitalize">{side}</span>
-                        <Num value={sb[side]} units={units} onChange={(v) => setSetback(side, v)} testId={`setback-${side}`} />
-                      </label>
-                    ))}
-                  </div>
-                </Field>
-
-                <Field
-                  label="Room sizes"
-                  hint="Target areas in m². The generator scales everything by one factor so the whole plan fits — so a number that ends up smaller than this is the fit talking, not a bug."
-                >
-                  <div className="grid grid-cols-2 gap-x-5">
-                    {brief.rooms.map((r, i) => (
-                      <div key={`${r.kind}-${i}`} className="flex items-center gap-2 border-b border-line py-1.5">
-                        <span className="min-w-0 flex-1 truncate text-[12px] text-ink">
-                          {r.count > 1 && <span className="text-inkFaint">{r.count}× </span>}
-                          {KIND_LABEL[r.kind]}
-                        </span>
-                        <input
-                          type="number"
-                          min={1}
-                          step={0.5}
-                          className="field h-6 w-16 text-right font-mono"
-                          value={r.targetArea ?? DEFAULT_ROOM_AREA[r.kind] ?? 14}
-                          data-testid={`area-${r.kind}`}
-                          onChange={(e) => {
-                            const targetArea = Number(e.target.value);
-                            setBrief((b) => ({ ...b, rooms: b.rooms.map((x, j) => (j === i ? { ...x, targetArea } : x)) }));
-                          }}
-                        />
-                        <span className="w-6 text-[10px] text-inkFaint">m²</span>
-                      </div>
-                    ))}
-                  </div>
-                </Field>
-
-                <Field label="Style">
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {(Object.keys(STYLE_LABEL) as DesignStyle[]).map((s) => (
-                      <button key={s} className="issue-row block w-full" aria-pressed={brief.style === s} onClick={() => patch({ style: s })}>
-                        <span className="block text-[12px] font-medium text-ink">{STYLE_LABEL[s]}</span>
-                        <span className="mt-0.5 block text-[11px] text-inkFaint">{STYLE_NOTE[s]}</span>
-                      </button>
-                    ))}
-                  </div>
-                </Field>
-
-                <Field label="Rough budget" hint="Optional. Argon does not price anything — this is recorded with the brief so material and area decisions stay proportionate to it.">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[12px] text-inkFaint">$</span>
-                    <input
-                      type="number"
-                      min={0}
-                      step={5000}
-                      className="field text-right font-mono"
-                      placeholder="150000"
-                      value={brief.budgetUsd ?? ''}
-                      data-testid="wizard-budget"
-                      onChange={(e) => patch({ budgetUsd: e.target.value ? Number(e.target.value) : undefined })}
-                    />
-                  </div>
-                </Field>
-
-                <Field label="Comfort" hint="These shape the layout rules the generator follows. All of them are preferences Argon applies deterministically — none is a statement about building regulations.">
-                  <div className="space-y-1.5">
-                    <Toggle
-                      on={brief.preferences.accessibility}
-                      title="Step-free access"
-                      note="Widens doors to at least 900 mm clear, keeps corridors wide, and puts the entrance and any bedroom on the ground floor."
-                      onChange={(v) => patch({ preferences: { ...brief.preferences, accessibility: v } })}
-                      testId="pref-accessibility"
-                    />
-                    <Toggle
-                      on={brief.preferences.ventilation}
-                      title="Cross ventilation"
-                      note="Places rooms so air can pass through the plan rather than dead-ending, and gives each side of the house openings."
-                      onChange={(v) => patch({ preferences: { ...brief.preferences, ventilation: v } })}
-                      testId="pref-ventilation"
-                    />
-                    <Toggle
-                      on={brief.preferences.daylight}
-                      title="Daylight"
-                      note="Biases living spaces and bedrooms toward the sunniest edges and widens their glazing."
-                      onChange={(v) => patch({ preferences: { ...brief.preferences, daylight: v } })}
-                      testId="pref-daylight"
-                    />
-                    <Toggle
-                      on={brief.preferences.privacy}
-                      title="Privacy"
-                      note="Keeps bedrooms off the street elevation and buffers them with hall space, at the cost of some daylight."
-                      onChange={(v) => patch({ preferences: { ...brief.preferences, privacy: v } })}
-                      testId="pref-privacy"
-                    />
-                  </div>
-                </Field>
-              </div>
-            )}
+              {tight && (
+                <p className="mt-1.5 text-[11px] leading-snug text-danger">
+                  The setbacks leave almost nothing. Set them to zero below.
+                </p>
+              )}
+            </section>
           </div>
+
+          {/* ── rooms ── */}
+          <section className="mt-6">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <h2 className="text-[14px] font-semibold tracking-[-0.01em] text-ink">What do you need?</h2>
+              <p className="hint">Furnish fits these to your plot. Sizes come afterwards if you want them.</p>
+            </div>
+
+            {GROUPS.map((group) => (
+              <div key={group.label} className="mt-4">
+                <div className="flex items-baseline gap-2">
+                  <h3 className="panel-title">{group.label}</h3>
+                  <p className="hint">{group.note}</p>
+                </div>
+                <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+                  {group.kinds.map((kind) => {
+                    const entry = brief.rooms.find((r) => r.kind === kind);
+                    return (
+                      <RoomRow
+                        key={kind}
+                        kind={kind}
+                        count={entry?.count ?? 1}
+                        on={Boolean(entry)}
+                        onToggle={(checked) =>
+                          setBrief((b) => ({
+                            ...b,
+                            rooms: checked ? [...b.rooms, { kind, count: 1 }] : b.rooms.filter((r) => r.kind !== kind),
+                          }))
+                        }
+                        onCount={(count) =>
+                          setBrief((b) => ({ ...b, rooms: b.rooms.map((r) => (r.kind === kind ? { ...r, count } : r)) }))
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+
+            <div className="mt-4 space-y-1.5">
+              {brief.rooms.length === 0 && (
+                <p className="hint text-warn">Pick at least a living room so there is something to plan.</p>
+              )}
+              {overBudgetArea && (
+                <p className="text-[11px] leading-snug text-warn">
+                  That is more than fits comfortably. Furnish will scale the rooms down rather than overflow your plot — or add a
+                  storey, or drop a room.
+                </p>
+              )}
+            </div>
+          </section>
+
         </div>
 
-        {/* ── footer ── */}
-        <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line px-5 py-3">
-          <p className="hint min-w-0 flex-1 leading-snug">
-            Generating runs deterministic layout code, no model involved — you get a real plan with rooms, walls, doors, windows
-            and furniture to drag. Not a promise of buildability or code compliance.
+        {/* ── footer ──
+            The two blank starts sit quiet on the left and the one action
+            everyone came for sits lit on the right. Four sentences of hedging
+            used to share this row with the buttons, which made the busiest part
+            of the screen the least confident. */}
+        <footer className="shrink-0 border-t border-line bg-surface px-6 py-4">
+          <p className="hint mb-3 leading-relaxed">
+            MiniMax picks which rooms this house has and how big they are; Furnish draws every line with deterministic layout code,
+            and the model is never given a coordinate. With no model the plan still generates from catalogue sizes, and the app
+            says so. Early-design geometry, not a compliance certificate.
           </p>
-          <button className="btn" onClick={startGrid} data-testid="wizard-grid" title="The rooms you ticked, tiled edge to edge on the ground floor. A starting point to rearrange, not a finished layout.">
-            Start from a grid
-          </button>
-          <button className="btn" onClick={startEmpty} data-testid="wizard-empty" title="The plot, the storeys and the brief. No rooms, walls or furniture — you draw those yourself.">
-            Empty plot
-          </button>
-          <button className="btn btn-accent" onClick={generate} data-testid="wizard-generate">
-            Generate the plan
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className="btn" onClick={loadSample} data-testid="wizard-sample" title="The plan the landing page draws — the same house every time, drawn with no model involved. A house to look at instead of an empty plot.">
+              Load the sample plan
+            </button>
+            <button className="btn" onClick={startGrid} data-testid="wizard-grid" title="The rooms you ticked, tiled edge to edge on the ground floor. A starting point to rearrange, not a finished layout.">
+              Start from a room grid
+            </button>
+            <button className="btn" onClick={startEmpty} data-testid="wizard-empty" title="The plot, the storeys and the brief. No rooms, walls or furniture — you draw those yourself.">
+              Empty plot
+            </button>
+            <span className="flex-1" />
+            <button className="btn btn-accent h-10 px-6 text-[14px] font-semibold shadow-raised" onClick={generate} disabled={planning} data-testid="wizard-generate">
+              {planning ? 'MiniMax is planning…' : 'Generate the plan'}
+            </button>
+          </div>
         </footer>
       </div>
     </div>
@@ -408,23 +432,13 @@ export function Onboarding({ onDone }: { onDone(): void }) {
 
 /* ───────────────────────────────────────────────────────────────── pieces ───── */
 
-function Field({ label, hint, className, children }: { label: string; hint?: string; className?: string; children: React.ReactNode }) {
-  return (
-    <div className={className ?? 'mt-4 first:mt-0'}>
-      <label className="label mb-1">{label}</label>
-      {hint && <p className="hint mb-1.5">{hint}</p>}
-      {children}
-    </div>
-  );
-}
-
 function Segmented({ value, onChange, options }: { value: string; onChange(v: string): void; options: Array<{ id: string; label: string }> }) {
   return (
-    <div className="inline-flex overflow-hidden rounded border border-line">
+    <div className="inline-flex overflow-hidden rounded-control border border-line">
       {options.map((o, i) => (
         <button
           key={o.id}
-          className={`btn h-7 rounded-none border-transparent ${i > 0 ? 'border-l border-line' : ''}`}
+          className={`btn rounded-none border-transparent ${i > 0 ? 'border-l border-line' : ''}`}
           aria-pressed={value === o.id}
           onClick={() => onChange(o.id)}
         >
@@ -435,17 +449,61 @@ function Segmented({ value, onChange, options }: { value: string; onChange(v: st
   );
 }
 
-function Toggle({ on, title, note, onChange, testId }: { on: boolean; title: string; note: string; onChange(v: boolean): void; testId: string }) {
+/**
+ * One room in the picker.
+ *
+ * The checkbox is wrapped in a `<label>` so the whole row — the square and the
+ * name — is the click target, which is what people actually aim at. The count
+ * box sits *outside* that label deliberately: a number input inside one becomes
+ * part of the label's click surface, and clicking "3" to change it would toggle
+ * the room off instead.
+ *
+ * The count only exists while the room is on. Showing an inert greyed box for
+ * every unselected kind made thirteen rows look like thirteen things to fill in,
+ * which is the opposite of how this screen is meant to read.
+ */
+function RoomRow({
+  kind,
+  count,
+  on,
+  onToggle,
+  onCount,
+}: {
+  kind: RoomKind;
+  count: number;
+  on: boolean;
+  onToggle(checked: boolean): void;
+  onCount(count: number): void;
+}) {
   return (
-    <button className="issue-row flex items-start gap-3" aria-pressed={on} onClick={() => onChange(!on)} data-testid={testId}>
-      <span className={`mt-0.5 flex h-4 w-7 shrink-0 items-center rounded-full p-0.5 transition-colors ${on ? 'bg-accent' : 'bg-line'}`}>
-        <span className={`h-3 w-3 rounded-full bg-white transition-transform ${on ? 'translate-x-3' : ''}`} />
-      </span>
-      <span className="min-w-0 flex-1 text-left">
-        <span className="block text-[12px] font-medium text-ink">{title}</span>
-        <span className="mt-0.5 block text-[11px] leading-snug text-inkFaint">{note}</span>
-      </span>
-    </button>
+    <div
+      className={`flex items-center gap-2.5 rounded-control border px-3 py-1.5 transition-colors ${
+        on ? 'border-accent/30 bg-accent-soft' : 'border-line bg-surface hover:border-lineStrong hover:bg-raised'
+      }`}
+    >
+      <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 py-0.5">
+        <input
+          type="checkbox"
+          className="h-4 w-4 shrink-0 cursor-pointer accent-[#0D9488]"
+          checked={on}
+          data-testid={`room-${kind}`}
+          onChange={(e) => onToggle(e.target.checked)}
+        />
+        <span className={`truncate text-[13px] ${on ? 'font-medium text-accent-ink' : 'text-inkSoft'}`}>{KIND_LABEL[kind]}</span>
+      </label>
+      {on && (
+        <input
+          type="number"
+          min={1}
+          max={9}
+          className="field h-7 w-12 shrink-0 px-1 text-center font-mono text-[12px]"
+          value={count}
+          data-testid={`room-count-${kind}`}
+          aria-label={`How many ${KIND_LABEL[kind].toLowerCase()} rooms`}
+          onChange={(e) => onCount(Math.max(1, Math.min(9, Math.round(Number(e.target.value) || 1))))}
+        />
+      )}
+    </div>
   );
 }
 
@@ -464,7 +522,7 @@ function Num({ value, units, onChange, testId }: { value: number; units: 'm' | '
           if (Number.isFinite(v) && v > 0) onChange(units === 'm' ? v : v * 0.3048);
         }}
       />
-      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-inkFaint">{units}</span>
+      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-inkFaint">{units}</span>
     </span>
   );
 }

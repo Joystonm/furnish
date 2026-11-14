@@ -1,4 +1,4 @@
-# Argon — Architecture
+# Furnish — Architecture
 
 How the studio is put together, and why. This is a description of the code as
 it stands, not an aspiration; where something is unfinished it says so.
@@ -156,7 +156,7 @@ of it. A refused plan says so, with the reason.
 
 The failure this section exists for: asked to "build me the complete design",
 the model writes a layout out in words — `Living room: x=3, y=4.5, 4.5 × 4.0` —
-and calls no tools. Argon draws from operations, not from words, so the plan
+and calls no tools. Furnish draws from operations, not from words, so the plan
 does not move, and a reply that reads like a description of the finished
 building is a claim about a change that never happened.
 
@@ -289,7 +289,7 @@ The aim point is a little below eye height on purpose: aiming level frames a ban
 of blank wall, aiming down a few degrees puts the floor, the furniture standing
 on it and the bottom of the windows in the same shot.
 
-Three things this mode needed that nothing else in the project did:
+Four things this mode needed that nothing else in the project did:
 
 **Storey-aware collision.** Every collider now carries the `floorId` it belongs
 to, and the inside camera tests only its own. Collision is 2D on XZ, so without
@@ -298,9 +298,88 @@ what happened the first time a camera could stand between storeys. The room the
 camera opens on is the lowest storey it can stand on, not the one with the most
 floor area: you walk into a house at ground level.
 
+**A floor to stand on.** Storey-aware collision is not enough on its own. Both
+first-person cameras wrote `pos.y` once at mount and never again, so the eye
+stayed at `EYE_HEIGHT` from the pavement to the top floor and a staircase had
+nothing it could do about it. Each frame now ends by asking what is underfoot.
+
+There are two cameras and they do not get the same floor, which is the part that
+took four rounds of reported failure to establish:
+
+| | `InsideView` (inside) | `FirstPerson` (walk) |
+|---|---|---|
+| starts | in a room | on the pavement |
+| ground floor | room slabs | **and the ground it walks in on** |
+| hole in the ground | — | **where every flight is** |
+
+The walk camera needs the ground plane because it starts outside and has to cross
+it to reach a room, and `walkableSurfaces` deliberately omits the ground paving —
+indoors, counting that paving would float the camera 9 cm above every ground-floor
+floor. Outdoors it is not a floor at all; it is the terrain the house stands on.
+
+**The holes are load-bearing, not tidiness.** `floorUnder` resolves ties by
+taking the *highest* candidate at or below the feet, so a single unbroken plane
+at ground level passes underneath a flight climbing to 2.7 and **beats its ramp at
+the foot**. The camera then walks the length of the staircase at a constant
+height — the reported symptom, exactly. `groundSurfaces` cuts each flight's
+footprint out of the plane for that reason, and `collision.test.ts` asserts the
+hole rather than trusting it.
+
+The walkable floor otherwise comes from two sources. `walkableSurfaces` reads the
+**boxes** — room slabs and terrace decks. `flightSurfaces` reads the **model** —
+one ramp per `Staircase`, positioned through `frameFor` and sized by the
+staircase's own `run`, `width` and `direction`, climbing from `floor.elevation` to
+`floor.elevation + rise`.
+
+That split is deliberate. An earlier version read the walkable flight out of the
+stair boxes as well, which makes climbing conditional on the render boxes
+happening to line up — and the flight the renderer actually drew, 0.05 m treads
+spaced a riser apart over one solid core, is exactly the one that does not line up
+with anything: the treads are see-through and the core's flat top sits 2.5 m above
+them. Coupling "can you walk up this" to "how did the 3D builder choose to draw
+this" means a rendering decision can silently become a navigation bug. A staircase
+*is* a continuous incline, so it is carried as one: `WalkSurface.ramp` gives the
+height at the min-Z end and the max-Z end, and `surfaceHeightAt` interpolates. The
+boxes are left to look like stairs and are not asked to be floors.
+
+`floorUnder(x, z, feetY, …)` returns the highest candidate at or below the feet
+plus `STEP_UP` (0.30 m; the generator's riser is `RISER` = 0.18). Highest rather
+than lowest is what keeps the camera on the surface it is on instead of dropping it
+through the flight to the slab beneath, and it is symmetric — descending, the
+surface behind leaves the footprint and the next one down becomes the highest
+candidate. Because the flight is a ramp, there is no frame on which the ground
+under the camera is simply missing, and stepping off the head onto the upper
+floor's slab is the same query answered on a different surface.
+
+A camera that is *already* over nothing is allowed to move. Refusing every move
+there would freeze it in mid-air with no way back onto anything, and a frozen
+camera is worse than the void the refusal guards against.
+
+`snapToFloor` already existed and was already unit-tested, and it cannot do this
+job: it ignores `(x, z)` entirely, so every surface in the building competes no
+matter which one is underfoot — which is harmless while the camera never leaves
+one storey and fatal the moment it climbs, because half way up the flight the
+first-floor slab is 1.4 m above the treads and belongs to the flight's
+destination. It is left alone and still tested; `floorUnder` is a different
+question.
+
+`floorAtElevation` then reads the height back as a storey, which is what moves
+the collider filter and the room readout upstairs. It matches on elevation rather
+than on anything carried on the surface because a flight belongs to no single
+storey — it leaves one and arrives at the next, and its upper half is genuinely
+between them.
+
+**A refusal.** The packer subtracts the stairwell from every floor, so no room —
+and no slab — covers the flight, which leaves a real hole in the floor above it.
+`floorUnder` answers "unchanged" when there is nothing beneath, which is right for
+a camera already standing somewhere and wrong for one being asked whether it may
+go there: unchanged reads as permission, and the camera would walk off the edge
+and hover in the void. `hasFloorUnder` is asked before the move is committed, and
+a step onto nothing is refused with the velocity zeroed rather than bounced off.
+
 **A click that a drag cannot become.** Dragging to look around and clicking a
 room are the same gesture until one of them moves more than four pixels. A
-capture-phase `click` listener on the `.argon-3d-view` wrapper compares the
+capture-phase `click` listener on the `.furnish-3d-view` wrapper compares the
 press position against the click position and swallows the click when they
 differ. It is on the wrapper rather than the canvas because the wrapper is an
 ancestor: the DOM fires capture listeners outermost-first, so it gets to decide
@@ -378,7 +457,7 @@ as slabs. All three were one expression.
 
 ## 8. Persistence
 
-IndexedDB (database `argon`, stores `projects` and `underlays`) — not
+IndexedDB (database `furnish`, stores `projects` and `underlays`) — not
 localStorage, because the export includes base64 underlay images and
 localStorage would blow its quota.
 
@@ -422,7 +501,7 @@ local stand-in, and that beats whatever `.env` happens to hold.
 | Suite | What it covers | Count |
 |-------|----------------|-------|
 | Vitest | model, ops, geometry, validation, registry, orchestrator, trace, exports, 3D | **508** in 14 files |
-| Playwright | the twelve-step demonstration, a pointer-lock regression, `e2e/editor.spec.ts` for the editing gestures, and `e2e/assistant.spec.ts` for the assistant | **27** |
+| Playwright | the twelve-step demonstration, a pointer-lock regression, `e2e/editor.spec.ts` for the editing gestures, `e2e/assistant.spec.ts` for the assistant, and `e2e/inside.spec.ts` for the inside camera | **29** |
 
 `npm run verify` runs typecheck → unit tests → build → e2e.
 
@@ -469,3 +548,66 @@ REVERSE_ENGINEERING.md
 FEATURE_MATRIX.md
 ARCHITECTURE.md
 ```
+
+---
+
+## 12. The staircase, and why it had no door
+
+`src/model/layout.ts` packs a brief into the buildable envelope in bands, and
+`planFloor` builds each floor's walls from the rooms that landed in it. Nothing
+in that pipeline ever thought about a staircase, which is why a generated
+two-storey house arrived with stairs that could not be climbed and led to a
+window.
+
+`placeStair` subtracts the shaft from the packing box and stops there. The walls
+around the shaft belong to whichever rooms packed next to it, and
+`chooseDoorPartitions` doors a partition only when **both** its rooms wanted it —
+which is almost never a stairwell. Meanwhile the same function glazes every
+boundary segment that bounds no room, and the shaft's near edge is exactly such a
+segment: it sits on the front elevation. So the flight arrived at a glass wall
+with nothing beside it, which is the whole of the second bug.
+
+`openStairEnds` in `plan.ts` closes it, and runs from the generator's stairs loop
+once every floor's walls exist, because it punches into walls only that loop
+created. For each end of the run — the near end on the storey the flight leaves,
+the far end on the one it arrives at — it targets the end of the run inset far
+enough to clear the first tread, and considers every wall within reach of that
+target. All four flanks are candidates, not just the two ends, because which of
+them has a wall on it depends entirely on what happened to pack beside the shaft,
+and the foot and the head are on *different* flanks.
+
+Two details are not incidental:
+
+- **An exterior wall that already has something at the spot is scored worse than
+  an interior one at the same distance.** The candidates sit at a similar
+  distance by construction, and without the tiebreak the front elevation gets a
+  door punched through it often enough to matter. It is a tiebreak, not a ban: on
+  a plan where the stair stands alone in its shaft, that exterior wall is the only
+  place for the door.
+- **The window moves, or it goes.** If every position over the flight is taken,
+  the blocker is almost always that stairwell window. It is relocated along the
+  wall if there is room, computed *before* the door so the two cannot overlap, and
+  removed if there is not. A staircase you cannot get into is worse than a
+  stairwell with no daylight.
+
+The door swings into the flight. The shaft is subtracted from the packing box
+before anything is furnished, so the stairwell is the one place on a generated
+plan guaranteed to be clear — and a door opening into a room that was furnished
+before this door existed is exactly how a new opening turns into a
+`door_swing_blocked` finding.
+
+**How the flight is drawn is now a separate question from how it is walked.**
+`stairBoxes` used to emit 0.05 m treads spaced a riser apart over one solid core,
+and that was wrong twice for the same reason: you could see between every pair of
+treads, so it read as a stack of loose slats, and the camera's floor *was* those
+see-through slabs, with the core's flat top 2.5 m above them. Each step is now a
+full-height solid running from the nosing below it up to its own, which closes
+the flight. Because walking no longer reads these boxes, their height is free to
+be whatever the picture needs; the balustrade is a panel and a cap stepped one per
+tread, because the box primitive has yaw and no pitch and a single raked rail
+cannot be expressed — and a flight with no handrail reads as unfinished. Railings
+are neither colliders nor walkable surfaces, so drawing them disturbs neither the
+walking nor the blocking.
+
+What this does not cover is in *Known limitations* in `FEATURE_MATRIX.md`:
+`addStaircase` does not call it, and no check reports a flight with no door.

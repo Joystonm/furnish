@@ -1,0 +1,7 @@
+{
+  "start_url": {
+    "value": "http://localhost:5174/",
+    "secret": false,
+    "description": "Absolute URL of the Furnish landing page (/), used as the browser entry point in both tests."
+  }
+}

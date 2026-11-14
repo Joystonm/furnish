@@ -117,7 +117,7 @@ async function throughWizard(button: 'wizard-generate' | 'wizard-grid' | 'wizard
   // back to a first run, which is what "start from ..." means here.
   await page.context().close();
   await openContext();
-  await page.goto('/');
+  await page.goto('/studio');
   await page.getByTestId('onboarding').waitFor({ state: 'visible', timeout: 30_000 });
   await page.getByTestId(button).click();
   await page.getByTestId('onboarding').waitFor({ state: 'hidden', timeout: 30_000 });

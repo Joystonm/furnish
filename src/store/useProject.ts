@@ -43,7 +43,7 @@ export type OperationName =
   | 'addFurniture' | 'moveFurniture' | 'removeFurniture'
   | 'addFloor' | 'renameFloor' | 'removeFloor' | 'setFloorHeight'
   | 'setPlot' | 'setBrief' | 'renameProject' | 'setDisplayUnits'
-  | 'applyMaterial' | 'defineMaterial'
+  | 'applyMaterial' | 'defineMaterial' | 'applyStyle'
   | 'addUnderlay' | 'updateUnderlay' | 'removeUnderlay'
   | 'replanFloor' | 'rebuildWalls' | 'replaceProject' | 'importProject';
 
@@ -89,9 +89,27 @@ export interface ActivityEntry {
 export type EditorTool =
   | 'select' | 'room' | 'wall' | 'door' | 'window' | 'furniture' | 'measure' | 'pan' | 'trace';
 
+/**
+ * Which camera the 3D view looks through.
+ *
+ * `walk` and `inside` are the first-person pair, and being in either one means
+ * the keyboard belongs to the camera: the editor's single-letter tool bindings
+ * stand aside. That rule is the whole reason this type lives here rather than in
+ * `App`, whose `useState` the keyboard listener above the tree cannot see.
+ */
+export type CameraMode = 'orbit' | 'top' | 'walk' | 'inside';
+
+/** Whether the camera is driving the keyboard right now. */
+export const isFirstPerson = (m: CameraMode): boolean => m === 'walk' || m === 'inside';
+
 export interface Toast {
   id: Id;
-  kind: 'info' | 'success' | 'error';
+  /**
+   * `warning` is for an operation that worked but is not what the user would
+   * assume happened — a plan that no model designed, for instance. It is a
+   * separate kind so it cannot be skimmed past as either success or error.
+   */
+  kind: 'info' | 'success' | 'warning' | 'error';
   message: string;
   at: number;
 }
@@ -117,9 +135,31 @@ interface ProjectState {
   gridEnabled: boolean;
   ruleOverrides: Partial<ConstraintRules>;
   dirty: boolean;
+  /**
+   * A new project was started and the brief has not been answered yet.
+   *
+   * This lives in the store rather than in `App`'s local state so that *every*
+   * path into a fresh project can ask the questions — File → New project, the
+   * assistant's `new_project` tool, a restored session. When it was local state
+   * initialised at mount, clicking New project swapped in a blank project at a
+   * hardcoded 15 × 20 m plot and never asked anything, which is the opposite of
+   * what starting a new project means.
+   */
+  awaitingBrief: boolean;
   /** Set by the AI while it is mid-turn, so the UI can show progress. */
   aiBusy: boolean;
   viewMode: 'plan' | '3d' | 'split';
+  /**
+   * Which camera the 3D view is looking through.
+   *
+   * In the store rather than in `App`'s own state because the *keyboard* has to
+   * know about it, and the keyboard listener lives in `main.tsx`, above the
+   * component tree. Held here, `W` can mean "Wall tool" when orbiting and
+   * nothing at all while walking — which is the entire difference between
+   * walking feeling broken and walking feeling like walking, since without it
+   * every forward step also arms the wall tool.
+   */
+  cameraMode: CameraMode;
 
   // ── actions ──────────────────────────────────────────────────────────────
   run<T = any>(name: OperationName, args: unknown[], opts?: RunOptions): RunSuccess<T> | RunFailure;
@@ -151,6 +191,7 @@ interface ProjectState {
   setGrid(on: boolean): void;
   setRules(r: Partial<ConstraintRules>): void;
   setViewMode(m: 'plan' | '3d' | 'split'): void;
+setCameraMode(m: CameraMode): void;
   setAiBusy(b: boolean): void;
   log(entry: Omit<ActivityEntry, 'id' | 'at'> & { id?: Id; at?: number }): void;
   approve(id: Id): void;
@@ -161,6 +202,14 @@ interface ProjectState {
   /** Write the project to storage immediately, dirty or not. */
   saveNow(): Promise<void>;
   newProject(name?: string): void;
+  /**
+   * Stop asking for a brief without installing a project.
+   *
+   * The wizard's own "just the plot" path calls `replace`, which clears the flag
+   * already; this exists for closing the wizard on an existing project, where
+   * "Change the brief" was pressed and then dismissed.
+   */
+  dismissBriefPrompt(): void;
 }
 
 const DEFAULT_SELECTION: Selection = { kinds: [], ids: [] };
@@ -245,6 +294,7 @@ const TABLE: Record<OperationName, OpFn> = {
   setDisplayUnits: ops.setDisplayUnits as unknown as OpFn,
   applyMaterial: ops.applyMaterial as unknown as OpFn,
   defineMaterial: ops.defineMaterial as unknown as OpFn,
+  applyStyle: ops.applyStyle as unknown as OpFn,
   addUnderlay: ops.addUnderlay as unknown as OpFn,
   updateUnderlay: ops.updateUnderlay as unknown as OpFn,
   removeUnderlay: ops.removeUnderlay as unknown as OpFn,
@@ -294,8 +344,10 @@ export const useProject = create<ProjectState>((set, get) => ({
   gridEnabled: true,
   ruleOverrides: {},
   dirty: false,
+  awaitingBrief: false,
   aiBusy: false,
   viewMode: 'plan',
+  cameraMode: 'orbit',
 
   run(name, args, opts = {}) {
     const fn = TABLE[name];
@@ -398,6 +450,10 @@ export const useProject = create<ProjectState>((set, get) => ({
       selection: DEFAULT_SELECTION,
       activeRoomId: null,
       dirty: true,
+      // Installing a real project answers the brief, whichever way it was
+      // produced — the wizard, the assistant's tools, or a file open. Leaving
+      // the flag set would pop the wizard back over a finished plan.
+      awaitingBrief: false,
     });
     get().log({ actor: opts.actor ?? 'system', label, ok: true });
     void persist(set, get);
@@ -536,6 +592,9 @@ export const useProject = create<ProjectState>((set, get) => ({
   setViewMode(m) {
     set({ viewMode: m });
   },
+  setCameraMode(m) {
+    set({ cameraMode: m });
+  },
   setAiBusy(b) {
     set({ aiBusy: b });
   },
@@ -553,14 +612,23 @@ export const useProject = create<ProjectState>((set, get) => ({
     set({ activity: get().activity.map((a) => (a.id === id ? { ...a, approval: 'rejected' } : a)) });
   },
 
+  /**
+   * Raise a transient message.
+   *
+   * The lifetime belongs to the toast *row*, not to this call. It used to be
+   * set here as well, with a timer that started the moment the toast was
+   * created — and that could remove a toast the user had never seen: the
+   * browser paints on its own schedule, and a plan being generated keeps the
+   * main thread busy long enough that a 3.6 s timer could expire before the
+   * first frame with the toast in it. The message that says a model planned the
+   * layout was the one that vanished, on a loaded machine, without a word.
+   *
+   * `ToastRow` times the toast from the moment it is rendered, which is the
+   * moment the user can actually read it.
+   */
   toast(kind, message) {
     const t: Toast = { id: activityId(), kind, message, at: Date.now() };
     set({ toasts: [...get().toasts, t].slice(-4) });
-    if (kind !== 'error') {
-      setTimeout(() => get().dismissToast(t.id), 3600);
-    } else {
-      setTimeout(() => get().dismissToast(t.id), 7000);
-    }
   },
 
   dismissToast(id) {
@@ -579,6 +647,11 @@ export const useProject = create<ProjectState>((set, get) => ({
     // `blankProject`, not `emptyProject`: a project with no floors cannot have a
     // room put in it, so File → New project left you unable to draw anything at
     // all until you noticed "Add floor" in the sidebar.
+    //
+    // `awaitingBrief` is what makes this a new *project* rather than a new
+    // canvas: without it the user got `blankProject`'s hardcoded 15 × 20 m
+    // default plot and no questions at all, which is how a fresh start ended up
+    // looking like the plot they had just been working on.
     const p = ops.blankProject(name ?? 'Untitled home');
     set({
       project: p,
@@ -589,9 +662,14 @@ export const useProject = create<ProjectState>((set, get) => ({
       activeRoomId: null,
       dirty: true,
       viewMode: 'plan',
+      awaitingBrief: true,
     });
     get().log({ actor: 'user', label: `New project${name ? ` "${name}"` : ''}`, ok: true });
     void persist(set, get);
+  },
+
+  dismissBriefPrompt() {
+    if (get().awaitingBrief) set({ awaitingBrief: false });
   },
 }));
 

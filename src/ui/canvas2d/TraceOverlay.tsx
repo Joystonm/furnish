@@ -203,7 +203,7 @@ export function TraceOverlay({ view, toPlan }: TraceOverlayProps) {
                 y1={plan.a.y * view.scale + view.offsetY}
                 x2={plan.b.x * view.scale + view.offsetX}
                 y2={plan.b.y * view.scale + view.offsetY}
-                stroke="#16a34a"
+                stroke="#059669"
                 strokeWidth={Math.max(2, plan.thickness * view.scale)}
                 strokeLinecap="square"
                 opacity={0.7}
@@ -229,17 +229,17 @@ export function TraceOverlay({ view, toPlan }: TraceOverlayProps) {
         )}
       </svg>
 
-      <aside className="absolute right-3 top-3 z-20 w-72 rounded-lg border border-stone-200 bg-white/95 shadow-lg backdrop-blur" data-testid="trace-panel">
-        <header className="flex items-center justify-between border-b border-stone-200 px-3 py-2">
-          <h3 className="text-[13px] font-semibold text-stone-800">Trace “{underlay.name}”</h3>
-          <button onClick={() => setTool('select')} className="rounded px-1.5 py-0.5 text-[11px] text-stone-500 hover:bg-stone-100">
+      <aside className="float-surface absolute right-3 top-3 z-20 w-80" data-testid="trace-panel">
+        <header className="flex h-11 items-center justify-between border-b border-line px-4">
+          <h3 className="text-[14px] font-semibold tracking-tight text-ink">Trace “{underlay.name}”</h3>
+          <button onClick={() => setTool('select')} className="btn btn-ghost h-7 px-2.5">
             Done
           </button>
         </header>
 
-        <div className="space-y-3 px-3 py-3 text-[12px] text-stone-600">
+        <div className="scroll-y space-y-3 px-4 py-4 text-[13px] text-inkSoft">
           {!underlay.calibration?.confirmed ? (
-            <div className="rounded border border-amber-200 bg-amber-50 p-2 text-amber-800">
+            <div className="rounded-control border border-warn/25 bg-warn/10 p-3 text-warn">
               <p className="font-medium">No scale yet</p>
               <p className="mt-0.5">
                 Click the two ends of a wall you know the real length of, then type that length below. Until then no
@@ -247,7 +247,7 @@ export function TraceOverlay({ view, toPlan }: TraceOverlayProps) {
               </p>
             </div>
           ) : (
-            <div className="rounded border border-emerald-200 bg-emerald-50 p-2 text-emerald-800">
+            <div className="rounded-control border border-ok/25 bg-ok/10 p-3 text-ok">
               Calibrated: <strong>1 px = {underlay.calibration.scale.toFixed(4)} m</strong> (from a{' '}
               {underlay.calibration.source.realDistance.toFixed(2)} m length).
             </div>
@@ -258,20 +258,20 @@ export function TraceOverlay({ view, toPlan }: TraceOverlayProps) {
               value={lengthText}
               onChange={(e) => setLengthText(e.target.value)}
               placeholder="4.20 m or 14 ft 1 in"
-              className="w-full rounded border border-stone-300 px-2 py-1 text-[12px] outline-none focus:border-stone-500"
+              className="field flex-1"
               onKeyDown={(e) => e.key === 'Enter' && applyCalibration()}
               data-testid="calibration-length"
             />
             <button
               onClick={applyCalibration}
               disabled={!picks.a || !picks.b}
-              className="shrink-0 rounded bg-stone-800 px-2 py-1 text-[11px] font-medium text-white disabled:opacity-40"
+              className="btn btn-primary shrink-0 px-3"
               data-testid="calibration-apply"
             >
               Set
             </button>
           </div>
-          <p className="text-[11px] text-stone-500">
+          <p className="hint">
             {picks.a && !picks.b ? 'Now click the far end of the same wall.' : 'Click two points on a known-length wall.'}
           </p>
 
@@ -286,7 +286,7 @@ export function TraceOverlay({ view, toPlan }: TraceOverlayProps) {
             <button
               onClick={() => fileRef.current?.click()}
               disabled={busy}
-              className="w-full rounded border border-stone-300 px-2 py-1.5 text-[12px] font-medium hover:bg-stone-50 disabled:opacity-50"
+              className="btn w-full"
               data-testid="trace-analyse"
             >
               {busy ? 'Analysing…' : 'Re-analyse image'}
@@ -296,38 +296,38 @@ export function TraceOverlay({ view, toPlan }: TraceOverlayProps) {
           {result && (
             <div>
               <div className="flex items-baseline justify-between">
-                <span className="font-medium text-stone-700">{result.proposals.length} walls detected</span>
-                <span className="tabular-nums text-stone-500">{accepted} accepted</span>
+                <span className="font-medium text-ink">{result.proposals.length} walls detected</span>
+                <span className="tabular-nums text-inkSoft">{accepted} accepted</span>
               </div>
-              {!result.calibrated && <p className="mt-1 text-[11px] text-amber-700">{result.blocker}</p>}
+              {!result.calibrated && <p className="mt-1 text-[12px] text-warn">{result.blocker}</p>}
               <div className="mt-1.5 flex gap-1">
-                <button onClick={acceptAllConfident} className="flex-1 rounded border border-stone-300 px-1 py-0.5 text-[11px] hover:bg-stone-50">
+                <button onClick={acceptAllConfident} className="btn h-7 flex-1 px-2 text-[12px]">
                   Accept likely
                 </button>
-                <button onClick={acceptNone} className="flex-1 rounded border border-stone-300 px-1 py-0.5 text-[11px] hover:bg-stone-50">
+                <button onClick={acceptNone} className="btn h-7 flex-1 px-2 text-[12px]">
                   Clear
                 </button>
               </div>
               <div className="mt-2 max-h-40 space-y-0.5 overflow-y-auto">
                 {result.proposals.slice(0, 60).map((p: TraceProposal) => (
-                  <label key={p.id} className="flex cursor-pointer items-center gap-1.5 rounded px-1 py-0.5 text-[11px] hover:bg-stone-50">
+                  <label key={p.id} className="flex cursor-pointer items-center gap-2 rounded-control px-2 py-1.5 text-[12px] hover:bg-raised">
                     <input type="checkbox" checked={p.accepted} onChange={() => toggleAccept(p.id)} disabled={!p.plan} />
-                    <span className="w-11 shrink-0 tabular-nums text-stone-700">{p.measured === null ? '—' : `${p.measured.toFixed(2)}m`}</span>
-                    <span className="truncate text-stone-500">{p.reason}</span>
-                    <span className="ml-auto shrink-0 tabular-nums text-stone-400">{Math.round(p.confidence * 100)}%</span>
+                    <span className="w-11 shrink-0 tabular-nums text-ink">{p.measured === null ? '—' : `${p.measured.toFixed(2)}m`}</span>
+                    <span className="truncate text-inkSoft">{p.reason}</span>
+                    <span className="ml-auto shrink-0 tabular-nums text-inkFaint">{Math.round(p.confidence * 100)}%</span>
                   </label>
                 ))}
               </div>
               <button
                 onClick={commitWalls}
                 disabled={accepted === 0}
-                className="mt-2 w-full rounded bg-stone-800 px-2 py-1.5 text-[12px] font-medium text-white disabled:opacity-40"
+                className="btn btn-accent mt-2 w-full"
                 data-testid="trace-commit"
               >
                 Create {accepted} wall{accepted === 1 ? '' : 's'}
               </button>
               {result.proposals.length > 60 && (
-                <p className="mt-1 text-[10px] text-stone-400">Showing the 60 highest-confidence detections of {result.proposals.length}.</p>
+                <p className="mt-1 text-[11px] text-inkFaint">Showing the 60 highest-confidence detections of {result.proposals.length}.</p>
               )}
             </div>
           )}

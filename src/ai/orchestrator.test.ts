@@ -774,7 +774,7 @@ describe('runAssistantTurn — a plan that only talks', () => {
 
 /**
  * The failure these cover: the user asks for a building, the model writes out a
- * layout in words, and Argon — which draws from operations, not prose — leaves
+ * layout in words, and Furnish — which draws from operations, not prose — leaves
  * the plan untouched while the reply reads as though it did not.
  */
 describe('runAssistantTurn — a design request answered in words', () => {

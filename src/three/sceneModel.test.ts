@@ -11,6 +11,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { buildScene, EAVES_OVERHANG, JOINT_OVERLAP, PLINTH_HEIGHT } from './sceneModel.ts';
+import { EYE_HEIGHT, bodyBand } from './collision.ts';
 import {
   addFloor,
   addOpening,
@@ -419,6 +420,30 @@ describe('toggles and colliders', () => {
     expect(Array.isArray(scene.boxes)).toBe(true);
     expect(Array.isArray(scene.colliders)).toBe(true);
   });
+
+  it('gives a north–south wall a collider as thin as the wall is', () => {
+    // The regression this exists for: a collider took the box's own extents as
+    // its world footprint and ignored the box's heading. A wall running north–
+    // south is built as a long box on its side, so its collider came out 6 m
+    // wide and 0.2 m deep — a wall lying across the floor instead of standing
+    // up. The camera could not walk past the stairwell's west wall, and the
+    // dining table, turned a quarter turn, reached 0.9 m through it.
+    const base = site();
+    const w = createWall(base, {
+      floorId: base.floors[0]!.id,
+      type: 'interior',
+      a: { x: 5, y: 2 },
+      b: { x: 5, y: 8 },
+    });
+    if (!w.ok) throw new Error(w.error);
+    const { colliders } = buildScene(w.project);
+
+    const wall = colliders.find((c) => Math.abs(c.x - (5 - PLOT_W / 2)) < 0.01);
+    expect(wall, 'the wall has no collider').toBeDefined();
+    // 0.1 m of thickness across, 6 m of length along.
+    expect(wall!.w).toBeCloseTo(WALL_THICKNESS.interior, 6);
+    expect(wall!.d).toBeCloseTo(6, 6);
+  });
 });
 
 /** A two-storey project: a room and an exterior wall, with a floor above. */
@@ -496,6 +521,108 @@ describe('the building reads as architecture', () => {
     expect(scene.colliders).toHaveLength(solid.length);
   });
 
+  it('hangs a ceiling in every room, clear of the roof soffit', () => {
+    const { p, upperId } = twoStoreyAt();
+    const room = createRoom(p, { floorId: upperId, kind: 'bedroom', x: 3, y: 3, width: 5, depth: 4 });
+    if (!room.ok) throw new Error(room.error);
+
+    const project = room.project;
+    const scene = buildScene(project);
+    const ceilings = scene.boxes.filter((b) => b.kind === 'ceiling');
+    expect(ceilings.length).toBeGreaterThan(0);
+
+    for (const c of ceilings) {
+      const floor = project.floors.find((f) => f.id === c.floorId)!;
+      // At the top of the room, and *not* flush with the underside of the roof
+      // deck: coplanar with it, the two fight for the depth buffer and the roof
+      // wears a ladder of ceiling seams right across it.
+      expect(c.y + c.h / 2).toBeLessThan(floor.elevation + floor.height);
+      expect(c.y + c.h / 2).toBeGreaterThan(floor.elevation + floor.height - 0.1);
+      // A ceiling is not a collider — you walk under it.
+      expect(scene.colliders.some((k) => k.x === c.x && k.z === c.z)).toBe(false);
+    }
+  });
+
+  it('takes the ceiling down with the roof, so the plan view is not lidded over', () => {
+    const base = site();
+    const a = withRoom(base, 'living', 3, 3, 8, 6);
+    const room = createRoom(a.p, { floorId: base.floors[0]!.id, kind: 'bedroom', x: 3, y: 10, width: 4, depth: 4 });
+    if (!room.ok) throw new Error(room.error);
+
+    expect(buildScene(room.project, { showRoof: false }).boxes.some((b) => b.kind === 'ceiling')).toBe(false);
+    expect(buildScene(room.project, { showRoof: true }).boxes.some((b) => b.kind === 'ceiling')).toBe(true);
+  });
+
+  it('fills a door opening with a leaf, and leaves the window openings glazed', () => {
+    // The regression this exists for: a door was a frame round an empty hole,
+    // which is the single most model-like thing a house can show you.
+    const doorProject = wallWithOpeningAt('door');
+    const door = buildScene(doorProject);
+    const leaves = door.boxes.filter((b) => b.kind === 'door');
+    expect(leaves.length).toBeGreaterThanOrEqual(3); // leaf, two panels, one handle
+
+    const opening = doorProject.walls[0]!.openings[0]!;
+    const leaf = leaves.reduce((a, b) => (b.w > a.w ? b : a));
+    // Set into the opening rather than filling it flush, so it reads as a door
+    // and catches a shadow line down both jambs.
+    expect(leaf.d).toBeLessThan(doorProject.walls[0]!.thickness);
+    expect(leaf.h).toBeLessThanOrEqual(opening.height);
+    // Standing on the floor, not floating.
+    expect(leaf.y - leaf.h / 2).toBeGreaterThan(0);
+
+    // And the leaf must not become a wall you cannot walk through — the camera
+    // walks through doors in this app. Matched by count rather than position,
+    // because the leaf shares its footprint with the solid piers either side.
+    const solid = door.boxes.filter((b) => b.kind === 'wall' || b.kind === 'furniture' || b.kind === 'glass');
+    expect(door.colliders).toHaveLength(solid.length);
+
+    // A window still gets no leaf; a leaf across the glass would be worse than
+    // the empty opening was.
+    const windowScene = buildScene(wallWithOpeningAt('window'));
+    expect(windowScene.boxes.filter((b) => b.kind === 'door')).toHaveLength(0);
+    expect(windowScene.boxes.filter((b) => b.kind === 'glass').length).toBeGreaterThan(0);
+  });
+
+  it('leaves a doorway you can actually walk through', () => {
+    // The regression this exists for: a collider carried only x/z, so the lintel
+    // over the door — a wall box sitting at 2.4 m, above the viewer's head —
+    // became an obstacle as wide as the door itself. Walking up the path to the
+    // front door ended in a blank elevation and a "walls stop you" message.
+    const doorProject = wallWithOpeningAt('door');
+    const door = buildScene(doorProject);
+    const band = bodyBand(EYE_HEIGHT);
+
+    // The wall is one straight run, so every collider belonging to it shares a
+    // single world coordinate on the axis it does *not* run along. Grouping by
+    // that finds the wall's own colliders without needing the frame transform.
+    const lines = new Map<number, typeof door.colliders>();
+    for (const c of door.colliders) {
+      const k = Math.round(c.z * 100);
+      lines.set(k, [...(lines.get(k) ?? []), c]);
+    }
+    const wallLine = [...lines.values()].reduce((a, b) => (b.length > a.length ? b : a));
+    expect(wallLine.length).toBeGreaterThanOrEqual(2); // the two piers at least
+
+    // Whatever stands in the doorway is either full height — a pier — or
+    // entirely above the top of a 1.62 m eye, which is what a lintel is.
+    for (const c of wallLine) {
+      expect(typeof c.y0).toBe('number');
+      expect(typeof c.y1).toBe('number');
+      expect(c.y1!).toBeGreaterThan(c.y0!);
+      const spansBody = c.y0! < band.y1 && c.y1! > band.y0;
+      const isLintel = c.y0! >= band.y1 - 1e-6;
+      // A collider is either something you walk into or something you walk
+      // under. Nothing may be both, and nothing may float in the doorway at
+      // head height without reaching the floor.
+      expect(spansBody || isLintel).toBe(true);
+    }
+
+    // And the count assertion from the leaf test still holds: adding heights
+    // must not change *which* boxes are colliders, only how high each reaches.
+    const solid = door.boxes.filter((b) => b.kind === 'wall' || b.kind === 'furniture' || b.kind === 'glass');
+    expect(door.colliders).toHaveLength(solid.length);
+  });
+
   it('separates wall, roof and ground in value, so the building is not one cream mass', () => {
     const base = site();
     const a = withRoom(base, 'living', 3, 3, 8, 6);
@@ -566,5 +693,109 @@ describe('the building reads as architecture', () => {
     for (const b of scene.boxes) {
       if (b.kind === 'lawn' || b.kind === 'paving' || b.kind === 'path') expect(b.ownerId).toBeUndefined();
     }
+  });
+});
+
+describe('door leaves swing on a hinge', () => {
+  it('emits each leaf as a pivot plus parts measured from that pivot', () => {
+    // The leaf used to be one flat box in `boxes`, with nothing recording
+    // which end it turns about. It looked like a door and could not move. Now
+    // it is a `SwingDoor`, and the claim that makes it work is the pivot: the
+    // leaf's centre must sit exactly half its width along the leaf from the
+    // hinge, because that is what "rotating about the hinge" means. Pivot at
+    // the middle instead and the door pirouettes; pivot past the edge and it
+    // jumps across the room. Nothing about the render would show the error.
+    const scene = buildScene(wallWithOpeningAt('door'));
+    expect(scene.doors).toHaveLength(1);
+    const door = scene.doors[0]!;
+
+    // Leaf, two panels and a handle, all on the same pivot.
+    expect(door.parts.length).toBeGreaterThanOrEqual(4);
+    for (const part of door.parts) expect(part.swingId).toBe(door.id);
+
+    // The leaf slab is the widest part, and its centre is half a leaf width
+    // from the hinge. `dx` is along the leaf, `dz` across it.
+    const leaf = door.parts.reduce((a, b) => (b.w > a.w ? b : a));
+    const reach = Math.hypot(leaf.dx ?? 0, leaf.dz ?? 0);
+    expect(reach).toBeCloseTo(door.width / 2, 2);
+    // Across the leaf it is nothing: the pivot is on the leaf's centreline, not
+    // off to one side of it.
+    expect(Math.abs(leaf.dz ?? 0)).toBeLessThan(0.01);
+
+    // Parts are stored square, so the group alone carries the wall's yaw. If
+    // any part kept its world yaw the door would be spun twice and would open
+    // at an angle unrelated to the wall it sits in.
+    for (const part of door.parts) expect(part.ry).toBe(0);
+
+    // Standing on the floor, not floating. The group origin is the middle of
+    // the hinge line, not the floor, so the leaf is centred on it vertically
+    // and its foot is exactly half a leaf height below.
+    expect(leaf.dy).toBeCloseTo(0, 3);
+    const foot = Math.min(...door.parts.map((p) => p.dy! - p.h / 2));
+    expect(foot).toBeCloseTo(-door.height / 2, 1);
+
+    // Every door swings one way or the other, and the two are distinguishable —
+    // a door that swings the wrong way sweeps the path of whoever is walking
+    // towards it, which is the failure this field exists to prevent.
+    expect([1, -1]).toContain(door.swingSign);
+  });
+
+  it('sends both hinge ends the right way round, and puts a leaf on doors only', () => {
+    // `hinge: 'start'` and `'end'` are opposite edges of the opening, and a
+    // wrong one mirrors the swing. Both are checked by where the leaf's centre
+    // ends up in world space, which is what the renderer measures its trigger
+    // distance from.
+    const build = (hinge: 'start' | 'end', swing: 'negative' | 'positive') => {
+      const base = site();
+      const w = createWall(base, {
+        floorId: base.floors[0]!.id,
+        type: 'interior',
+        a: { x: 4, y: 6 },
+        b: { x: 14, y: 6 },
+      });
+      if (!w.ok) throw new Error(w.error);
+      const o = addOpening(w.project, {
+        wallId: w.createdIds[0]!,
+        kind: 'door',
+        offset: 4,
+        width: 0.9,
+        height: 2.1,
+        sill: 0,
+        hinge,
+        swing,
+      });
+      if (!o.ok) throw new Error(o.error);
+      return buildScene(o.project).doors[0]!;
+    };
+
+    // The wall runs +x, so its start hinge is at the lower x and its end hinge
+    // at the higher one. A `positive` swing opens toward −z, a `negative` one
+    // toward +z.
+    const fromStart = build('start', 'positive');
+    const fromEnd = build('end', 'positive');
+    expect(fromStart.swingSign).toBe(-1);
+    expect(fromEnd.swingSign).toBe(-1);
+    // Same swing direction, opposite ends of the opening — which is the whole
+    // point of recording the hinge separately from the swing.
+    expect(fromStart.hinge.x).toBeLessThan(fromEnd.hinge.x);
+    expect(fromStart.hinge.x).not.toBeCloseTo(fromEnd.hinge.x, 1);
+
+    // A cased opening gets a frame but no leaf. A living room opening into its
+    // kitchen is 1.5 m of nothing by design, and a swinging slab across it
+    // would put a door in the middle of the living space.
+    const base = site();
+    const w = createWall(base, {
+      floorId: base.floors[0]!.id,
+      type: 'interior',
+      a: { x: 4, y: 6 },
+      b: { x: 14, y: 6 },
+    });
+    if (!w.ok) throw new Error(w.error);
+    const o = addOpening(w.project, { wallId: w.createdIds[0]!, kind: 'opening', offset: 4, width: 1.5, height: 2.2, sill: 0 });
+    if (!o.ok) throw new Error(o.error);
+    const open = buildScene(o.project);
+    expect(open.doors).toHaveLength(0);
+    // Still framed, so it reads as joinery rather than a hole.
+    expect(open.boxes.some((b) => b.kind === 'frame')).toBe(true);
   });
 });

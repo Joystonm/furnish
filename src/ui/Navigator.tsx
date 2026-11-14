@@ -34,11 +34,11 @@ export function Navigator({ onStartOver }: { onStartOver(): void }) {
   const sb = project.plot.setbacks;
 
   return (
-    <nav className="rail w-[236px] shrink-0 border-r border-line" aria-label="Project navigator">
+    <nav className="rail w-[236px] shrink-0 border-r border-line shadow-panel" aria-label="Project navigator">
       {/* ── floors ── */}
       <div className="panel-head">
         <span className="panel-title">Floors</span>
-        <button className="btn btn-ghost h-6 px-1.5 text-[11px]" data-testid="add-floor" onClick={() => {
+        <button className="btn btn-ghost px-2 text-[12px]" data-testid="add-floor" onClick={() => {
           const res = useProject.getState().run('addFloor', [], { actor: 'user' });
           if (res.ok) setActiveFloor(res.data.id);
         }}>
@@ -46,7 +46,7 @@ export function Navigator({ onStartOver }: { onStartOver(): void }) {
         </button>
       </div>
 
-      <div className="scroll-y max-h-[42%] p-1">
+      <div className="scroll-y max-h-[42%] p-1.5">
         {floors.map((f, i) => (
           <FloorRow
             key={f.id}
@@ -65,7 +65,7 @@ export function Navigator({ onStartOver }: { onStartOver(): void }) {
       <div className="panel-head border-t border-line">
         <span className="panel-title">Plot</span>
       </div>
-      <dl className="grid grid-cols-2 gap-x-2 gap-y-1 px-3 py-2 text-[11px]">
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-2 px-3.5 py-2.5 text-[11px]">
         <Metric label="Size" value={`${formatLength(project.plot.width, units, 2)} × ${formatLength(project.plot.depth, units, 2)}`} />
         <Metric label="Area" value={formatArea(project.plot.width * project.plot.depth, units)} />
         <Metric label="Street edge" value={({ 0: 'Top (north)', 90: 'Right (east)', 180: 'Bottom (south)', 270: 'Left (west)' } as const)[project.plot.orientation]} />
@@ -76,7 +76,7 @@ export function Navigator({ onStartOver }: { onStartOver(): void }) {
         />
       </dl>
 
-      <button className="btn mx-2 mb-2 justify-start" onClick={onStartOver} data-testid="change-brief">
+      <button className="btn mx-2.5 mb-2.5 justify-start" onClick={onStartOver} data-testid="change-brief">
         Change the brief
       </button>
 
@@ -84,19 +84,19 @@ export function Navigator({ onStartOver }: { onStartOver(): void }) {
       <div className="panel-head border-t border-line">
         <span className="panel-title">Blueprint underlay</span>
       </div>
-      <div className="p-2">
+      <div className="p-2.5">
         {project.underlays.length ? (
           <div className="space-y-1">
             {project.underlays.map((u) => (
               <div key={u.id} className="flex items-center gap-1.5">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[11px] font-medium text-ink">{u.name}</p>
+                  <p className="truncate text-[12px] font-medium text-ink">{u.name}</p>
                   <p className={u.calibration?.confirmed ? 'text-[11px] text-ok' : 'text-[11px] text-warn'}>
                     {u.calibration?.confirmed ? `Calibrated · ${formatLength(u.calibration.scale * 1000, 'm', 0)} mm/px` : 'Not calibrated — lengths unknown'}
                   </p>
                 </div>
                 <button
-                  className="btn btn-ghost btn-icon h-6 w-6"
+                  className="btn btn-ghost btn-icon"
                   title="Remove underlay"
                   onClick={() => useProject.getState().run('removeUnderlay', [u.id], { actor: 'user' })}
                 >
@@ -104,14 +104,14 @@ export function Navigator({ onStartOver }: { onStartOver(): void }) {
                 </button>
               </div>
             ))}
-            <button className="btn w-full justify-start" onClick={() => useProject.getState().setTool('trace')}>
+            <button className="btn mt-1.5 w-full justify-start" onClick={() => useProject.getState().setTool('trace')}>
               {project.underlays[0]?.calibration?.confirmed ? 'Open tracing' : 'Calibrate and trace'}
             </button>
           </div>
         ) : (
           <>
-            <p className="hint mb-1.5">
-              Drop in a photo or scan of an existing plan. You give it one real measurement; Argon proposes the walls and you
+            <p className="hint mb-2">
+              Drop in a photo or scan of an existing plan. You give it one real measurement; Furnish proposes the walls and you
               confirm each one before it becomes geometry.
             </p>
             <input
@@ -134,9 +134,9 @@ export function Navigator({ onStartOver }: { onStartOver(): void }) {
         <span className="panel-title">This browser</span>
         <span className="hint">auto-saved</span>
       </div>
-      <div className="scroll-y min-h-0 flex-1 p-1">
-        {entries === null && <p className="px-2 py-1 hint">Reading…</p>}
-        {entries?.length === 0 && <p className="px-2 py-1 hint">Nothing else saved yet.</p>}
+      <div className="scroll-y min-h-0 flex-1 p-1.5">
+        {entries === null && <p className="px-2.5 py-1.5 hint">Reading…</p>}
+        {entries?.length === 0 && <p className="px-2.5 py-1.5 hint">Nothing else saved yet.</p>}
         {entries?.map((e) => (
           <div key={e.id} className="row group">
             <button
@@ -146,13 +146,13 @@ export function Navigator({ onStartOver }: { onStartOver(): void }) {
                 else useProject.getState().toast('error', 'That project could not be read back.');
               })}
             >
-              <span className="block truncate text-[12px] font-medium text-ink">{e.name}</span>
+              <span className="block truncate text-[13px] font-medium text-ink">{e.name}</span>
               <span className="block text-[11px] text-inkFaint">
                 {e.floorCount} floor{e.floorCount === 1 ? '' : 's'} · {e.roomCount} rooms · {formatDate(e.updatedAt)}
               </span>
             </button>
             <button
-              className="btn btn-ghost btn-danger btn-icon h-6 w-6 opacity-0 group-hover:opacity-100"
+              className="btn btn-ghost btn-danger btn-icon opacity-0 group-hover:opacity-100"
               title={`Delete ${e.name} from this browser`}
               onClick={() => {
                 if (!window.confirm(`Delete “${e.name}”? This cannot be undone.`)) return;
@@ -163,7 +163,7 @@ export function Navigator({ onStartOver }: { onStartOver(): void }) {
             </button>
           </div>
         ))}
-        <p className="px-2 py-2 text-[11px] leading-snug text-inkFaint">
+        <p className="px-2.5 py-2 text-[11px] leading-snug text-inkFaint">
           Projects are stored in this browser only — nothing is uploaded. Clearing site data erases them, so export JSON if you
           need a backup.
         </p>
@@ -186,14 +186,14 @@ function FloorRow({
   };
 
   return (
-    <div className="row" aria-selected={active} data-testid="floor-row" data-floor-id={floor.id}>
-      <button className="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-line text-[9px] font-semibold text-inkFaint" onClick={onSelect} title="Show this floor">
+    <div className="row group" aria-selected={active} data-testid="floor-row" data-floor-id={floor.id}>
+      <button className="flex h-5 w-5 shrink-0 items-center justify-center rounded-control border border-line bg-raised text-[10px] font-semibold tabular-nums text-inkFaint transition-colors hover:border-lineStrong hover:bg-line" onClick={onSelect} title="Show this floor">
         {index}
       </button>
       {renaming ? (
         <input
           autoFocus
-          className="field h-6 flex-1"
+          className="field flex-1"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
@@ -204,7 +204,7 @@ function FloorRow({
         />
       ) : (
         <button className="min-w-0 flex-1 text-left" onClick={onSelect} onDoubleClick={() => { setDraft(floor.name); setRenaming(true); }}>
-          <span className="block truncate text-[12px] font-medium text-ink">{floor.name}</span>
+          <span className="block truncate text-[13px] font-medium text-ink">{floor.name}</span>
           <span className="block text-[11px] text-inkFaint">
             {roomCount} room{roomCount === 1 ? '' : 's'} · {formatLength(floor.height, units, 2)} high
             {floor.elevation > 0.001 && ` · +${formatLength(floor.elevation, units, 2)}`}
@@ -213,7 +213,7 @@ function FloorRow({
       )}
       {total > 1 && !renaming && (
         <button
-          className="btn btn-ghost btn-danger btn-icon h-6 w-6 opacity-0 group-hover:opacity-100"
+          className="btn btn-ghost btn-danger btn-icon opacity-0 group-hover:opacity-100"
           title={`Delete ${floor.name}`}
           onClick={() => {
             if (window.confirm(`Delete ${floor.name} and everything on it?`)) useProject.getState().run('removeFloor', [floor.id], { actor: 'user' });
@@ -257,7 +257,7 @@ async function importUnderlay(file: File | undefined): Promise<void> {
   const dims = await new Promise<{ width: number; height: number }>((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-    img.onerror = () => reject(new Error('That file is not an image Argon can open.'));
+    img.onerror = () => reject(new Error('That file is not an image Furnish can open.'));
     img.src = dataUrl;
   });
 

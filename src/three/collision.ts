@@ -11,6 +11,7 @@
  * because per-axis is what makes sliding along a wall feel right: you approach
  * a wall at an angle, you do not stop dead, you travel along it.
  */
+import { Vector3, type Object3D } from 'three';
 import type { Collider } from './sceneModel.ts';
 
 /** Radius of the camera's "body" in metres — roughly shoulder width. */
@@ -68,10 +69,15 @@ function forbiddenSpan(
 interface AxisCollider {
   centre: number;
   halfExtent: number;
-  /** Signed gap to the camera on the *other* axis; set before each pass. */
+  /**
+   * Signed gap to the camera on the *other* axis; set before each pass.
+   *
+   * Zero means the camera's centre lies within the collider's span on that
+   * axis — it is squarely in front of the collider's face rather than off to
+   * one side beside it, and that is what tells a head-on move from a move
+   * along the wall.
+   */
   lateral: number;
-  /** The collider this was derived from, for the full 2-D circle test. */
-  source: Collider;
 }
 
 interface AxisResult {
@@ -90,14 +96,26 @@ function gapFrom(v: number, lo: number, hi: number): number {
 /**
  * Resolve one axis against every collider, clamping to the nearest face.
  *
- * `other` is the camera's coordinate on the perpendicular axis — constant for
- * this pass — and is needed because the span alone cannot tell a camera that is
- * stuck *inside* a wall from one that is merely grazing a corner.
+ * The camera is a disc of `radius`, and a collider is a rectangle, so the
+ * camera's centre may not come within `radius` of it. Where the camera starts
+ * decides what the move is allowed to do:
+ *
+ *  - **Clear of the collider.** The move stops at the face it is about to
+ *    reach. This is the ordinary case and it is a swept test, so a step longer
+ *    than a wall cannot tunnel through it.
+ *  - **Already overlapping, but off to one side.** The move runs *along* the
+ *    collider's face rather than into it, and clamping it back is what froze a
+ *    camera in a doorway it was halfway through. The move is let alone.
+ *  - **Already overlapping, and squared up against the face.** The move is
+ *    heading into the collider, and it is held where it is. Carrying on would
+ *    take the camera through: pressed two centimetres into an exterior wall,
+ *    it was allowed to travel the whole way through it and out of the house.
+ *  - **Embedded.** The camera's centre is inside the collider, so it cannot
+ *    simply stay; it is carried out the far side, which is the only escape.
  */
 function resolveAxis(
   from: number,
   delta: number,
-  other: number,
   active: AxisCollider[],
   radius: number,
 ): AxisResult {
@@ -116,17 +134,264 @@ function resolveAxis(
     // through it, which is exactly what this module exists to prevent.
     if (Math.min(from, target) >= hi || Math.max(from, target) <= lo) continue;
     touching = true;
-    if (from >= lo && from <= hi && overlapsCollider(from, other, c.source, radius)) {
-      // Genuinely penetrating, not just grazing the corner: carry on out the far
-      // side rather than snapping back the way we came, which would fight a
-      // wall the camera is pressed against. This cannot escape a solid thicker
-      // than the step.
-      allowed = delta > 0 ? Math.min(hi, target) : Math.max(lo, target);
+
+    const bodyLo = c.centre - c.halfExtent;
+    const bodyHi = c.centre + c.halfExtent;
+
+    let limit: number;
+    if (from > lo && from < hi && c.lateral !== 0) {
+      // Already overlapping, but off to one side: the camera is beside the
+      // collider rather than in front of it, so the move runs along the
+      // collider's face. Clamping it back is what froze a camera in a doorway
+      // it was halfway through.
+      limit = target;
+    } else if (from <= bodyLo) {
+      // West of the collider: moving east is into it, moving west is away.
+      limit = delta > 0 ? lo : target;
+    } else if (from >= bodyHi) {
+      // East of the collider: moving west is into it, moving east is away.
+      limit = delta < 0 ? hi : target;
     } else {
-      allowed = delta > 0 ? lo : hi;
+      // The camera's centre is inside the collider, so there is nowhere to
+      // hold it. Put it back on whichever side is nearer.
+      limit = from - bodyLo <= bodyHi - from ? lo : hi;
     }
+    // Fold monotonically rather than assigning. Which collider constrains a move
+    // must not depend on the order the array happens to be in: with a hundred of
+    // them, "last one wins" let a permissive wall near the end of the list
+    // overrule the jamb the camera was actually about to hit, so whether a step
+    // through the front door went through or stuck depended on nothing more than
+    // how many frames the browser had drawn.
+    allowed = delta > 0 ? Math.min(allowed, limit) : Math.max(allowed, limit);
   }
   return { value: allowed, touching };
+}
+
+/**
+ * The ground-plane direction the camera is facing, and its right-hand side.
+ *
+ * Read out of the camera's *world* orientation rather than from `rotation.y`.
+ *
+ * This is the whole ballgame for walking, and reading the yaw alone gets it
+ * wrong roughly half the time. A camera looking down its own -Z toward world +Z
+ * is not stored as yaw = π: `Object3D.lookAt` builds an orthonormal basis whose
+ * +Z axis is `eye - target`, so facing north comes out as **pitch = ±π, yaw = 0**.
+ * Derive forward as `(-sin yaw, 0, -cos yaw)` from that and you get the exact
+ * opposite of where the camera is looking — W walks backwards, A and D swap.
+ * It is intermittent rather than constant because the alternative representation
+ * is used for some headings and this one for others, so it feels like the
+ * controls are intermittently inverted.
+ *
+ * Taking the world direction and projecting it onto the ground plane is exact at
+ * any pitch, and it also means looking up or down does not slow you down, which
+ * is the behaviour a first-person camera wants.
+ */
+export function movementBasis(camera: Object3D): { fx: number; fz: number; rx: number; rz: number } {
+  camera.getWorldDirection(FORWARD);
+  const len = Math.hypot(FORWARD.x, FORWARD.z);
+  // Looking straight up or straight down leaves no ground direction. Hold the
+  // last heading rather than dividing by zero and sending the camera off at a
+  // random angle; W still walks, it just keeps the heading it had.
+  if (len < 1e-4) return { fx: 0, fz: -1, rx: 1, rz: 0 };
+  const fx = FORWARD.x / len;
+  const fz = FORWARD.z / len;
+  // Right is forward turned a quarter turn clockwise seen from above.
+  return { fx, fz, rx: -fz, rz: fx };
+}
+
+/** Move the camera by its own forward and right vectors, scaled by intent. */
+export function wishVector(
+  basis: { fx: number; fz: number; rx: number; rz: number },
+  forward: number,
+  strafe: number,
+  speed: number,
+): { x: number; z: number } {
+  // Normalise, so that a diagonal is not faster than a straight line.
+  //
+  // Forward and strafe are unit vectors on orthogonal axes, so holding both adds
+  // two vectors of `speed` that are √2 apart — holding W+D moved at 41% more
+  // than holding W alone. The consequence is not just a number: you cannot walk
+  // a straight line without drifting wide, and you overshoot a doorway every
+  // time you approach it diagonally.
+  //
+  // Divided by `max(1, ·)` rather than by the magnitude itself, so that a
+  // deliberate fraction — the inside camera's scroll-wheel push — is passed
+  // through untouched and only a genuine diagonal is scaled down.
+  const scale = speed / Math.max(1, Math.hypot(forward, strafe));
+  return {
+    x: (basis.fx * forward + basis.rx * strafe) * scale,
+    z: (basis.fz * forward + basis.rz * strafe) * scale,
+  };
+}
+
+/**
+ * Walking pace, in metres per second.
+ *
+ * 1.7 m/s is about 6 km/h, which is an adult's ordinary walking pace. The 2.6
+ * this replaces is a power walk: brisk enough that the camera has cover half a
+ * large room before you can read anything in it, which is the wrong trade for a
+ * tool whose job is looking at rooms.
+ */
+export const WALK_SPEED = 1.7;
+
+/** Running pace, on Shift. */
+export const RUN_SPEED = 3.1;
+
+/**
+ * Indoor pace, in metres per second.
+ *
+ * Lower than outdoors for the reason `InsideView` already gives: these rooms are
+ * two and a half metres across, and a sprint crosses one before it can be read.
+ */
+export const INDOOR_SPEED = 1.45;
+
+/** Indoor running pace, on Shift. */
+export const INDOOR_RUN_SPEED = 2.7;
+
+/**
+ * Acceleration, in m/s².
+ *
+ * A gait, not a snap: ~0.28 s from standing to walking pace. What this replaces
+ * was an exponential chase with a ~83 ms time constant, whose *initial*
+ * acceleration was about 31 m/s² and which reached 90% of pace in ~190 ms — a
+ * body that either has momentum or does not, with no weight between.
+ */
+export const ACCEL = 6;
+
+/**
+ * Deceleration, in m/s².
+ *
+ * Deliberately about twice `ACCEL`, and that ratio is the whole feel. People
+ * start up slowly and stop quickly; a walk that took as long to stop as to start
+ * reads as sliding on ice, and one that stopped as fast as it started reads as a
+ * cursor. ~0.15 s from pace to still.
+ */
+export const DECEL = 11;
+
+/**
+ * Move `vel` toward `wish` at a fixed rate, in m/s².
+ *
+ * Frame-rate independent by construction: the step is `rate * delta`, never a
+ * fixed fraction of the gap, so a machine drawing at 30 fps and one drawing at
+ * 240 reach walking pace in the same wall-clock time. The exponential smoothing
+ * this replaces looked frame-rate independent too, and was not — its time
+ * constant was multiplied through the frame rate, so a slow machine lagged into
+ * every stride.
+ *
+ * Which rate applies is decided by where the wish vector is *relative* to the
+ * current velocity, not by its own magnitude:
+ *
+ * - Opposed (`wish · vel < 0`) means the player has reversed or turned to face
+ *   the other way. Decelerating is right: a turnaround passes through still.
+ * - Slower (`|wish| < |vel|`) means releasing the keys, or dropping off Shift.
+ *   Decelerating is right.
+ * - Otherwise accelerate — including a hard change of heading at constant
+ *   speed, where the two vectors are perpendicular and neither test fires.
+ */
+export function approachVelocity(
+  vel: { x: number; z: number },
+  wish: { x: number; z: number },
+  delta: number,
+  accel: number = ACCEL,
+  decel: number = DECEL,
+): { x: number; z: number } {
+  const dx = wish.x - vel.x;
+  const dz = wish.z - vel.z;
+  const gap = Math.hypot(dx, dz);
+  if (gap === 0) return { x: vel.x, z: vel.z };
+
+  const opposed = wish.x * vel.x + wish.z * vel.z < 0;
+  const slower = wish.x * wish.x + wish.z * wish.z < vel.x * vel.x + vel.z * vel.z;
+  const step = (opposed || slower ? decel : accel) * Math.max(0, delta);
+  if (gap <= step) return { x: wish.x, z: wish.z }; // close enough to arrive this frame
+  return { x: vel.x + (dx / gap) * step, z: vel.z + (dz / gap) * step };
+}
+
+/**
+ * Distance one walking stride covers, in metres.
+ *
+ * The head bob advances its phase once per this much ground, which is what ties
+ * the two together: bob frequency cannot drift out of step with the gait, and
+ * the bob cannot keep going after the walker has stopped, because no ground is
+ * being covered to drive it.
+ */
+export const STRIDE = 0.9;
+
+/**
+ * Head bob, and the constants that drive it.
+ *
+ * Kept as plain numbers rather than as a scene setting because this is a
+ * question of taste that can be answered in one place: `BOB` is the single
+ * constant to set to zero if the motion reads as a gimmick rather than as a
+ * body. The two amplitudes are ratios of it rather than separate literals, so
+ * dropping one constant drops the whole effect.
+ *
+ * 1.2 cm vertical is at the bottom of the range for a real walk (measured head
+ * sway is 1–2 cm). It is meant to be felt on a straight run down a corridor and
+ * not thought about in a room — a design tool whose camera never quite settles
+ * is a tool that is worse at showing you a room.
+ */
+export const BOB = 0.012;
+export const BOB_LATERAL = BOB * 0.55;
+export const BOB_ROLL = (0.3 * Math.PI) / 180;
+
+/** The camera's bob at one instant. */
+export interface Bob {
+  /** Vertical offset, in metres. Positive is up. */
+  vertical: number;
+  /** Lateral offset, in metres, along the camera's own right vector. */
+  lateral: number;
+  /** Roll, in radians. */
+  roll: number;
+}
+
+/**
+ * Advance the bob's phase by the ground actually covered.
+ *
+ * Distance, not seconds: a time-driven bob falls out of step with the gait
+ * whenever the pace changes, keeps rocking after the walker has stopped, and
+ * runs at the wrong frequency on a machine drawing four frames a second. The
+ * ground covered is the one quantity that is right in all three cases — and it
+ * is zero when the walker is pushing into a wall, which is why the camera does
+ * not shake when it cannot move.
+ */
+export function bobPhase(phase: number, covered: number): number {
+  return phase + (covered / STRIDE) * Math.PI * 2;
+}
+
+/**
+ * The camera's bob at a phase and a pace.
+ *
+ * `pace` is the fraction of full walking speed, and it scales the whole effect:
+ * a standing camera is a still camera, including during the deceleration after
+ * the key is released.
+ *
+ * The sway is at half the bob frequency, because a body sways once per stride
+ * and dips twice.
+ */
+export function bob(phase: number, pace: number): Bob {
+  const sway = Math.sin(phase / 2);
+  return {
+    vertical: Math.sin(phase) * BOB * pace,
+    lateral: sway * BOB_LATERAL * pace,
+    roll: sway * BOB_ROLL * pace,
+  };
+}
+
+const FORWARD = new Vector3();
+
+/** How far above the eye the top of the camera's head sits, in metres. */
+export const HEAD_ABOVE_EYE = 0.14;
+
+/**
+ * The vertical extent of the camera's body, for colliders to be tested against.
+ *
+ * A camera is a sphere on the XZ plane but a person on the Y axis, and the
+ * difference is the difference between a walkable front door and a blank wall.
+ * Feet are the floor the camera stands on; head is the eye plus a little.
+ */
+export function bodyBand(eyeY: number): { y0: number; y1: number } {
+  return { y0: eyeY - EYE_HEIGHT, y1: eyeY + HEAD_ABOVE_EYE };
 }
 
 /**
@@ -136,6 +401,13 @@ function resolveAxis(
  * instead of sticking. `filter` lets the caller ignore colliders on a floor the
  * camera is not on — otherwise you could not walk under a first-floor slab or
  * through a first-floor wall while standing on the ground floor.
+ *
+ * `band` is the height the camera's body actually occupies, and it is what makes
+ * a doorway a doorway. Without it every collider is treated as infinitely tall,
+ * so the lintel over a front door blocks exactly as hard as the door frame beside
+ * it and the viewer walks up the path into a solid elevation. A collider with no
+ * declared height is treated as infinitely tall too, so omitting it blocks
+ * rather than quietly letting the camera through something of unknown extent.
  */
 export function moveWithCollision(
   x: number,
@@ -145,30 +417,39 @@ export function moveWithCollision(
   colliders: Collider[],
   radius: number = CAMERA_RADIUS,
   filter?: (c: Collider) => boolean,
+  band?: { y0: number; y1: number },
 ): MoveResult {
-  const active = filter ? colliders.filter(filter) : colliders;
+  const active = colliders.filter((c) => {
+    if (filter && !filter(c)) return false;
+    if (band) {
+      // Blocks only where the camera's body and the collider actually overlap.
+      // An absent height means infinitely tall, so unknown blocks.
+      const y0 = c.y0 ?? -Infinity;
+      const y1 = c.y1 ?? Infinity;
+      if (band.y1 <= y0 || band.y0 >= y1) return false;
+    }
+    return true;
+  });
 
   const alongX: AxisCollider[] = active.map((c) => ({
     centre: c.x,
     halfExtent: c.w / 2,
     lateral: gapFrom(z, c.z - c.d / 2, c.z + c.d / 2),
-    source: c,
   }));
   const alongZ: AxisCollider[] = active.map((c) => ({
     centre: c.z,
     halfExtent: c.d / 2,
     lateral: 0, // filled in below, against the *resolved* x
-    source: c,
   }));
 
-  const rx = resolveAxis(x, dx, z, alongX, radius);
+  const rx = resolveAxis(x, dx, alongX, radius);
   const nx = rx.value;
 
   for (let i = 0; i < alongZ.length; i++) {
     const c = active[i]!;
     alongZ[i]!.lateral = gapFrom(nx, c.x - c.w / 2, c.x + c.w / 2);
   }
-  const rz = resolveAxis(z, dz, nx, alongZ, radius);
+  const rz = resolveAxis(z, dz, alongZ, radius);
 
   return { x: nx, z: rz.value, touching: rx.touching || rz.touching };
 }
@@ -194,13 +475,466 @@ export function snapToFloor(fromY: number, candidates: Array<{ y: number; x: num
   return best;
 }
 
-/** Walkable surfaces: every room slab plus every stair tread. */
+/**
+ * The flat surfaces a camera can stand on, out of the scene's boxes: every room
+ * slab and every terrace deck.
+ *
+ * **Stair boxes are deliberately not read from here.** They used to be, and a
+ * flight was therefore climbable only if every one of its boxes happened to line
+ * up — which couples whether you can walk up the stairs to how the renderer
+ * chose to draw them. A flight is now walked as a slope built from the staircase
+ * itself, by `flightSurfaces`, so the boxes are free to be whatever reads best
+ * without the two having to agree. See `WalkSurface.ramp`.
+ *
+ * The ground paving is likewise not one of them. `sceneModel` builds it as a
+ * single slab spanning the whole buildable envelope with its top at +0.09, a
+ * little above the ground-floor slabs' top face at exactly the floor elevation —
+ * so counting it would put the camera 9 cm above the floor in every ground-floor
+ * room in the house, and make it step up rather than down across the threshold.
+ * It is the ground the building stands on, not a floor in it.
+ */
 export function walkableSurfaces(
-  boxes: Array<{ y: number; x: number; z: number; w: number; d: number; h: number; kind: string }>,
-): Array<{ y: number; x: number; z: number; w: number; d: number }> {
-  return boxes
-    .filter((b) => b.kind === 'room-slab' || b.kind === 'slab' || b.kind === 'stair' || b.kind === 'deck')
-    .map((b) => ({ y: b.y + b.h / 2, x: b.x, z: b.z, w: b.w, d: b.d }));
+  boxes: Array<{
+    y: number;
+    x: number;
+    z: number;
+    w: number;
+    d: number;
+    h: number;
+    kind: string;
+    /** Rectangles of this surface the camera must not be given as floor. */
+    walkHoles?: Footprint[];
+  }>,
+): WalkSurface[] {
+  const out: WalkSurface[] = [];
+  for (const b of boxes) {
+    if (b.kind !== 'room-slab' && b.kind !== 'deck') continue;
+    // A slab with a hole in it is still one slab to look at and several to walk
+    // on. The hole is a hole in the *floor*, not in the picture: the room's floor
+    // finish is still drawn whole, and only the surface the camera may stand on
+    // is broken into the pieces around the hole.
+    let rects: Footprint[] = [{ x: b.x, z: b.z, w: b.w, d: b.d }];
+    for (const hole of b.walkHoles ?? []) rects = rects.flatMap((r) => cutOut(r, hole));
+    for (const r of rects) {
+      if (r.w < 0.05 || r.d < 0.05) continue;
+      out.push({ y: b.y + b.h / 2, x: r.x, z: r.z, w: r.w, d: r.d });
+    }
+  }
+  return out;
+}
+
+/**
+ * How far above the feet a surface still counts as a step rather than a ceiling.
+ *
+ * A stair riser is 170–190 mm and the camera moves a few centimetres a frame, so
+ * 30 cm clears a riser with margin while remaining far short of the 2.7 m a
+ * storey is. Below it, the first floor's slab is a ceiling — which is exactly
+ * why the number has to exist: without a threshold, standing in a ground-floor
+ * room directly under the one above would snap the camera up through the slab.
+ */
+export const STEP_UP = 0.3;
+
+/**
+ * How far below a storey's elevation the feet may be and still count as being
+ * on it.
+ *
+ * Deliberately far smaller than `STEP_UP`. `STEP_UP` answers "can the camera
+ * step onto this", and it is generous because a riser is. This answers "which
+ * storey is the camera in", and the answer must not change while the camera is
+ * still below the upper slab: the storey decides whose walls and furniture
+ * the camera collides with, and handing over early means the camera is already
+ * being filtered by a floor it has not reached. The tolerance is only here to
+ * absorb the rounding in a height read back from a ramp.
+ */
+export const STOREY_EPSILON = 0.05;
+
+/** A surface a camera can stand on, as `walkableSurfaces` and `flightSurfaces` produce. */
+export interface WalkSurface {
+  /** Height of the top face, in world metres. Ignored when `ramp` is set. */
+  y: number;
+  /** Centre in world X and Z. */
+  x: number;
+  z: number;
+  /** Full extents in world X and Z. */
+  w: number;
+  d: number;
+  /**
+   * A sloped surface: the height at the min-Z end and at the max-Z end.
+   *
+   * Only a flight has one. It is what a staircase is — a continuous incline —
+   * and reading it as such means the camera's height along the run is decided by
+   * the model's own `run`, `rise` and `direction` rather than by however many
+   * boxes the renderer happened to emit and whether they line up.
+   */
+  ramp?: { from: number; to: number };
+}
+
+/** The height of a walkable surface at world Z `z`. */
+export function surfaceHeightAt(c: WalkSurface, z: number): number {
+  if (!c.ramp) return c.y;
+  const t = Math.min(1, Math.max(0, (z - (c.z - c.d / 2)) / c.d));
+  return c.ramp.from + (c.ramp.to - c.ramp.from) * t;
+}
+
+/** The part of a `Staircase` a walkable flight needs. */
+export interface StairRun {
+  floorId: string;
+  /** Footprint centre in plan coordinates. */
+  x: number;
+  y: number;
+  width: number;
+  run: number;
+  direction: -1 | 1;
+  rise?: number;
+}
+
+/**
+ * Every staircase as a slope the camera can walk.
+ *
+ * Built from the model, not from the render, and that is the whole point. Reading
+ * a walkable floor out of the boxes ties "can you climb this" to "how did the 3D
+ * builder choose to draw it" — and when the two disagree, or the boxes are simply
+ * absent, the camera walks straight through a staircase that is plainly there.
+ *
+ * `direction` is +1 for a flight ascending away from `floorId`, so its low end is
+ * at the min-Z end of the run; −1 is a flight descending out of that floor, whose
+ * low end is at the max-Z end instead. `tz` is a translation, not a flip, so the
+ * plan's +Y really is the world's +Z and the ends are unambiguous.
+ */
+export function flightSurfaces(
+  stairs: StairRun[],
+  frame: { tx: (x: number) => number; tz: (y: number) => number },
+  elevationOf: Map<string, number>,
+  heightOf: Map<string, number>,
+): WalkSurface[] {
+  return stairs.map((s) => {
+    const rise = s.rise ?? heightOf.get(s.floorId) ?? 0;
+    const base = elevationOf.get(s.floorId) ?? 0;
+    // A +1 flight leaves `floorId` and arrives above it; a -1 one arrives below.
+    const lowAtMinZ = s.direction === 1;
+    const bottom = s.direction === 1 ? base : base - rise;
+    const top = bottom + rise;
+    return {
+      x: frame.tx(s.x),
+      y: bottom + rise / 2,
+      z: frame.tz(s.y),
+      w: s.width,
+      d: s.run,
+      ramp: { from: lowAtMinZ ? bottom : top, to: lowAtMinZ ? top : bottom },
+    };
+  });
+}
+
+/** A flat rectangle in world X and Z. */
+export interface Footprint {
+  x: number;
+  z: number;
+  w: number;
+  d: number;
+}
+
+/**
+ * `a` with `hole` taken out of it: the band before the hole, the band after it,
+ * and the two flanks beside it. The whole of `a` when they do not meet.
+ *
+ * A local copy rather than the generator's `subtractRect` because that works in
+ * plan coordinates and this works in world ones, and because pulling the whole
+ * layout module into the camera's floor system to borrow ten lines of rectangle
+ * arithmetic is the wrong way round.
+ */
+function cutOut(a: Footprint, hole: Footprint): Footprint[] {
+  const left = a.x - a.w / 2;
+  const right = a.x + a.w / 2;
+  const near = a.z - a.d / 2;
+  const far = a.z + a.d / 2;
+  const x0 = Math.max(left, hole.x - hole.w / 2);
+  const z0 = Math.max(near, hole.z - hole.d / 2);
+  const x1 = Math.min(right, hole.x + hole.w / 2);
+  const z1 = Math.min(far, hole.z + hole.d / 2);
+  if (x1 <= x0 || z1 <= z0) return [a];
+
+  const out: Footprint[] = [];
+  if (z0 > near) out.push({ x: a.x, z: (near + z0) / 2, w: a.w, d: z0 - near });
+  if (z1 < far) out.push({ x: a.x, z: (z1 + far) / 2, w: a.w, d: far - z1 });
+  if (x0 > left) out.push({ x: (left + x0) / 2, z: a.z, w: x0 - left, d: z1 - z0 });
+  if (x1 < right) out.push({ x: (x1 + right) / 2, z: a.z, w: right - x1, d: z1 - z0 });
+  return out;
+}
+
+/**
+ * The ground a walk-mode camera crosses to reach the house.
+ *
+ * This is the one thing walk mode needs and inside mode does not. The walk
+ * starts out on the pavement, so it needs something to stand on *before* it
+ * reaches a room slab — and it cannot simply take `walkableSurfaces`, because
+ * that deliberately omits the ground paving, which indoors would float the
+ * camera 9 cm above every ground-floor floor. Out here that paving is not a floor
+ * at all; it is the terrain the house stands on, and standing on it is the whole
+ * point.
+ *
+ * **The holes are the whole point.** A single unbroken plane at the ground level
+ * would pass under every flight, and `floorUnder` resolves ties by taking the
+ * *highest* candidate at or below the feet — so a flat plane at 0 underneath a
+ * flight climbing to 2.7 does not lose to the ramp, it beats it at the foot and
+ * the camera walks the length of the staircase at a constant height, passing
+ * straight through the middle of it. That is the failure this arrangement
+ * exists to prevent, and it is not hypothetical: it is what walk mode did until
+ * this function existed, because walk mode had no floor system at all.
+ */
+export function groundSurfaces(
+  plot: { width: number; depth: number },
+  flights: WalkSurface[],
+  verge = 0,
+): WalkSurface[] {
+  let rects: Footprint[] = [{ x: 0, z: 0, w: plot.width + verge * 2, d: plot.depth + verge * 2 }];
+  for (const f of flights) rects = rects.flatMap((r) => cutOut(r, { x: f.x, z: f.z, w: f.w, d: f.d }));
+  return rects
+    .filter((r) => r.w > 0.05 && r.d > 0.05)
+    .map((r) => ({ y: 0, x: r.x, z: r.z, w: r.w, d: r.d }));
+}
+
+/**
+ * The height of the surface the camera is standing on at (x, z).
+ *
+ * `snapToFloor` cannot answer this. It ignores position entirely, so every
+ * surface in the building competes no matter which one is underfoot — which was
+ * tolerable while the inside camera never left one storey, and is fatal once it
+ * climbs: halfway up a flight the query would return the first-floor slab, which
+ * is 1.4 m above the treads and belongs to the flight's *destination*.
+ *
+ * So this tests containment, and then takes the **highest** surface at or below
+ * `feetY + STEP_UP`. Highest rather than lowest because that is what keeps the
+ * camera on the tread it is on rather than dropping it through the flight to the
+ * slab beneath, and it is symmetric: descending, the tread behind is out of
+ * containment and the next tread down becomes the highest candidate. Falling is
+ * allowed here, unlike in `snapToFloor`, because standing still on a landing and
+ * stepping off it should be a drop, not a hover — but only ever to a surface
+ * directly below, never to nothing: with nothing underfoot the height is returned
+ * unchanged, which leaves the camera exactly where it was rather than at the
+ * origin.
+ */
+export function floorUnder(
+  x: number,
+  z: number,
+  feetY: number,
+  candidates: WalkSurface[],
+): number {
+  let best = -Infinity;
+  for (const c of candidates) {
+    if (Math.abs(x - c.x) > c.w / 2) continue;
+    if (Math.abs(z - c.z) > c.d / 2) continue;
+    // For a flight this is the height along the incline at this Z, which is the
+    // whole reason the flight is carried as a ramp: the camera follows the slope
+    // rather than snapping to whichever tread box happened to be nearest.
+    const y = surfaceHeightAt(c, z);
+    if (y > feetY + STEP_UP) continue;
+    if (y > best) best = y;
+  }
+  return best === -Infinity ? feetY : best;
+}
+
+/**
+ * Whether there is anything to stand on at (x, z) at or below the feet.
+ *
+ * `floorUnder` returns the current height unchanged when nothing is beneath,
+ * which is the right answer for a camera that is already standing somewhere. It
+ * is the wrong answer for one being *asked* to walk there: the generator leaves
+ * the stairwell out of every floor's packing, so the flight has no slab above
+ * it and the edge of that hole is walkable — the camera would step into a void
+ * and hover in it. This is the question to ask before committing to a move.
+ */
+export function hasFloorUnder(
+  x: number,
+  z: number,
+  feetY: number,
+  candidates: WalkSurface[],
+): boolean {
+  // With no surfaces at all there is no floor system to be trapped by. Refusing
+  // every move because the list is empty would freeze the camera where it was
+  // placed, which is a worse failure than the one this guards against — and the
+  // camera was placed inside a room, so there is ground under it either way.
+  if (!candidates.length) return true;
+  return candidates.some((c) => {
+    if (Math.abs(x - c.x) > c.w / 2) return false;
+    if (Math.abs(z - c.z) > c.d / 2) return false;
+    return surfaceHeightAt(c, z) <= feetY + STEP_UP;
+  });
+}
+
+/**
+ * Which storey the camera is standing on.
+ *
+ * Matched by elevation rather than by anything carried on the surface, because
+ * a flight belongs to no single storey — it leaves one floor and arrives at the
+ * next, and the upper half of it is genuinely between them. Choosing by height
+ * keeps the collider filter and the room lookup on one floor the whole way up,
+ * and hands over exactly when the feet reach within `STEP_UP` of the upper slab.
+ *
+ * Order-independent; the highest qualifying elevation wins.
+ *
+ * The handover happens when the feet actually reach the slab, not when they come
+ * within `STEP_UP` of it. A camera climbing the last few steps is still below
+ * the upper floor and must still be filtered by the floor it is leaving.
+ */
+export function floorAtElevation(
+  feetY: number,
+  floors: Array<{ floorId: string; elevation: number }>,
+): string | null {
+  let best: { id: string; y: number } | null = null;
+  for (const f of floors) {
+    if (f.elevation > feetY + STOREY_EPSILON) continue;
+    if (!best || f.elevation > best.y) best = { id: f.floorId, y: f.elevation };
+  }
+  return best?.id ?? null;
+}
+
+/**
+ * The longest move the walk may make in one go.
+ *
+ * A flight is carried as a ramp, and the camera follows it by asking how high
+ * that ramp is where it now stands. The question has a condition attached: the
+ * surface under the camera must be no more than `STEP_UP` above the feet, or it
+ * is a ceiling rather than a step, and the camera is not allowed onto it.
+ *
+ * So a move that rises more than `STEP_UP` in one go does not climb the flight.
+ * It is refused — and because the camera is then standing over nothing at all,
+ * it counts as *stranded*, which is allowed to move regardless. The result is
+ * the camera gliding up the inside of the staircase at a constant height: the
+ * flight is right there, the camera goes through it, and the storey above is
+ * never reached.
+ *
+ * That is not a hypothetical. The move has to cover more than 30 cm of rise in
+ * one go, which at walking pace is a frame time of about a fifth of a second —
+ * and a machine that renders at four frames a second does it on every frame.
+ * The head of the flight is also exactly where this bites: the camera arrives at
+ * the top of the ramp still at the height of the bottom of it, and never gets
+ * through the door.
+ *
+ * Integrating the movement in fixed small steps takes the dependence on the
+ * frame rate out of it: a step of 1/60 s rises at most 4 cm on the steepest
+ * flight this app builds, which no riser can out-run.
+ */
+export const WALK_SUB_STEP = 1 / 60;
+
+/** The world a walk takes place in. */
+export interface WalkWorld {
+  plot: { width: number; depth: number };
+  colliders: Collider[];
+  surfaces: WalkSurface[];
+  /** The storeys, by elevation. */
+  floors: Array<{ floorId: string; elevation: number }>;
+  /** How far outside the plot the camera may stand, in metres. */
+  verge?: number;
+}
+
+/** Where the camera is, and which storey it is on. */
+export interface WalkBody {
+  /** Eye height, in world metres. */
+  x: number;
+  y: number;
+  z: number;
+  floorId?: string | null;
+}
+
+/** Where the camera is after a step, with the storey settled one way or the other. */
+export interface WalkBodyAfter {
+  x: number;
+  y: number;
+  z: number;
+  floorId: string | null;
+}
+
+/** What one frame of walking did. */
+export interface WalkAdvance {
+  body: WalkBodyAfter;
+  vel: { x: number; z: number };
+  /** Ground actually covered, in metres — this is what drives the head bob. */
+  covered: number;
+  /** Whether the camera is pressed against something. */
+  touching: boolean;
+}
+
+/**
+ * One frame of walking: move, resolve against what is in the way, and settle
+ * onto whatever is underfoot.
+ *
+ * The whole of it, in one place, because the two cameras that walk — the one
+ * outdoors and the one indoors — used to keep their own copy of the same
+ * arithmetic, and a fix to one of them was not a fix to the other.
+ *
+ * The movement is integrated in steps of at most `WALK_SUB_STEP` rather than in
+ * one move per frame, so that how fast the camera climbs a flight does not
+ * depend on how fast the machine draws it. See `WALK_SUB_STEP` for what happens
+ * when it does.
+ */
+export function advanceWalk(
+  body: WalkBody,
+  vel: { x: number; z: number },
+  dt: number,
+  world: WalkWorld,
+): WalkAdvance {
+  const steps = Math.max(1, Math.ceil(dt / WALK_SUB_STEP));
+  const sub = dt / steps;
+  let { x, y, z } = body;
+  let floorId = body.floorId;
+  let vx = vel.x;
+  let vz = vel.z;
+  let covered = 0;
+  let touching = false;
+
+  for (let i = 0; i < steps; i++) {
+    const clamped = clampToPlot(x, z, world.plot, 0.6, world.verge ?? 0);
+    const moved = moveWithCollision(
+      clamped.x,
+      clamped.z,
+      vx * sub,
+      vz * sub,
+      world.colliders,
+      CAMERA_RADIUS,
+      // Only this storey's walls and furniture. Collision is tested on the XZ
+      // plane, so without the filter the ground floor's sofa blocks the first
+      // floor — and once the camera can actually climb, that is not a
+      // hypothetical.
+      (c) => !floorId || !c.floorId || c.floorId === floorId,
+      bodyBand(y),
+    );
+
+    // Refuse a step onto nothing — unless the camera is *already* over nothing,
+    // which is a different question. If the ground beneath it has gone (a plan
+    // regenerated under an open walk), refusing every move would freeze it in
+    // mid-air with no way back onto anything, and a frozen camera is worse than
+    // the one this guards against. So one that is already stranded may move, and
+    // walks out.
+    const stranded = !hasFloorUnder(x, z, y - EYE_HEIGHT, world.surfaces);
+    if (moved.touching) touching = true;
+    if (stranded || hasFloorUnder(moved.x, moved.z, y - EYE_HEIGHT, world.surfaces)) {
+      covered += Math.hypot(moved.x - clamped.x, moved.z - clamped.z);
+      x = moved.x;
+      z = moved.z;
+    } else {
+      // Stopped at the edge rather than bounced off it, so holding the key
+      // against the lip of the void does not accumulate speed to be spent the
+      // moment the camera steps back.
+      vx = 0;
+      vz = 0;
+    }
+
+    // What is underfoot, which sets the eye height and says which storey the
+    // camera has reached.
+    //
+    // This is what makes a staircase climbable. A flight is carried as a single
+    // ramp (`flightSurfaces`), so its height at any point along the run is the
+    // incline itself and the eye rises continuously rather than in steps —
+    // there is no frame on which the ground under the camera is simply missing
+    // and the move is refused. Stepping off the head onto the upper floor's
+    // slab hands the camera to the storey above, which is what the collider
+    // filter and the room readout both follow a frame later.
+    const support = floorUnder(x, z, y - EYE_HEIGHT, world.surfaces);
+    y = support + EYE_HEIGHT;
+    floorId = floorAtElevation(support, world.floors) ?? floorId;
+  }
+
+  return { body: { x, y, z, floorId: floorId ?? null }, vel: { x: vx, z: vz }, covered, touching };
 }
 
 /**

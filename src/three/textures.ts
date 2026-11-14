@@ -12,9 +12,33 @@
  * A `map` multiplies the material colour, so a greyscale map in a narrow band
  * around white modulates whatever colour the scene model chose without ever
  * fighting it. One rule covers every surface: the map only says "this bit is a
- * little darker than that bit". The same texture is reused as a `bumpMap`,
- * because bump reads the red channel — so the joints between floorboards are
- * both a change of value and a change of height, for the price of one upload.
+ * little darker than that bit".
+ *
+ * ── Three maps per family, not one ───────────────────────────────────────────
+ * This used to build one greyscale texture and hand it to three.js as both the
+ * `map` and the `bumpMap`. That is wrong in two separate ways, and both of them
+ * are why the house looked like white cardboard:
+ *
+ * 1. `bumpMap` reads the red channel of an **sRGB** texture. three.js gamma-
+ *    decodes an sRGB texture on sample, so the height the shader saw was the
+ *    square root of the height that was painted — every joint and every grain
+ *    arrived with the wrong magnitude and the wrong slope.
+ * 2. There was no normal map and no roughness map at all, so every surface in
+ *    the building was uniformly rough and uniformly un-directional. A wall that
+ *    is rough *everywhere* has no texture worth the name; a wall with a faint
+ *    normal across the render and a slightly glossier band where a plasterer's
+ *    float passed is what the eye reads as a surface.
+ *
+ * So each family now paints once and derives the rest from that one greyscale
+ * field, which stays the single source of truth:
+ *
+ *   albedo   the painter's output, sRGB, modulates colour
+ *   normal   Sobel gradient of the same field, linear, tangent-space
+ *   rough    the same field, inverted and compressed, linear
+ *
+ * All three tile, all three are seeded, and none of them costs a second
+ * painter. The strength of the normal per family is in `NORMAL_STRENGTH`,
+ * because plaster wants a whisper and a tile joint wants a trench.
  *
  * ── Determinism ───────────────────────────────────────────────────────────────
  * Every random number comes from a seeded generator, never `Math.random`. An
@@ -24,8 +48,46 @@
 import * as THREE from 'three';
 import { toCreasedNormals } from 'three-stdlib';
 
-/** Texture resolution. 192 is enough for a wall seen at 15 m and cheap to build. */
-const SIZE = 192;
+/**
+ * Surface fidelity.
+ *
+ * `draft` is the old 192-pixel, colour-and-bump-only path and it is what the
+ * automated suite runs on, because that suite drives Chromium through
+ * SwiftShader — a software rasteriser where every extra sampler and every extra
+ * fragment of shading is paid for in wall-clock. `realistic` is 512 pixels with
+ * all three maps, and it is what a machine with a GPU gets by default.
+ */
+export type SurfaceQuality = 'draft' | 'realistic';
+
+const SIZES: Record<SurfaceQuality, number> = { draft: 192, realistic: 512 };
+
+let quality: SurfaceQuality = 'draft';
+
+/** Texture resolution for the current quality setting. */
+export function surfaceSize(): number {
+  return SIZES[quality];
+}
+
+/**
+ * Switch surface fidelity, regenerating every cached map.
+ *
+ * The caches are cleared rather than converted because the painter writes into
+ * a fixed-size buffer; changing the quality means rebuilding at the new size.
+ * `materialCache` goes too, since every material holds references into the maps
+ * being thrown away.
+ */
+export function setSurfaceQuality(next: SurfaceQuality): void {
+  if (next === quality) return;
+  quality = next;
+  noiseCache.clear();
+  textureCache.clear();
+  for (const mat of materialCache.values()) mat.dispose();
+  materialCache.clear();
+}
+
+export function currentSurfaceQuality(): SurfaceQuality {
+  return quality;
+}
 
 // ─────────────────────────────────────────────────────────────── primitives ───
 
@@ -258,53 +320,217 @@ const NOISE_FOR: Record<string, { lattice: number; octaves: number; seed: number
 };
 
 const noiseCache = new Map<string, Float32Array>();
-const textureCache = new Map<string, THREE.CanvasTexture>();
+const textureCache = new Map<string, SurfaceMaps>();
+
+/**
+ * How hard each family pushes its normal map.
+ *
+ * A plaster wall has a texture you could not photograph; a tile joint is a
+ * two-millimetre trench and it should read as one. Running every family at the
+ * same strength is what made the old bump-only render read as uniform — the
+ * strong families were always too weak and the weak families always too
+ * strong. These numbers are the correction.
+ */
+const NORMAL_STRENGTH: Record<string, number> = {
+  plaster: 0.6,
+  render: 2.2,
+  concrete: 2.0,
+  roof: 1.4,
+  stone: 3.4,
+  oak: 2.6,
+  tile: 3.6,
+  carpet: 1.6,
+  fabric: 1.5,
+  lawn: 1.2,
+  paving: 3.2,
+  metal: 1.8,
+  leaf: 1.4,
+  flat: 0.5,
+};
+
+/**
+ * Roughness multiplier per family, relative to the greyscale field.
+ *
+ * three.js multiplies `material.roughness` by the **green** channel of the
+ * roughness map, so a white map means "exactly as rough as the material says".
+ * Values above 1 cannot be encoded, so these all sit below 1 and
+ * `materialFor` divides the requested roughness by the mean to put the average
+ * back where the scene model asked for it. The variation is the point: the
+ * recessed joint in a tile floor should be rougher than the glaze around it.
+ */
+const ROUGH_SPREAD = 0.16;
+const ROUGH_MEAN = 0.9;
 
 function noiseFor(surface: string): Float32Array {
   const cached = noiseCache.get(surface);
   if (cached) return cached;
   const spec = NOISE_FOR[surface] ?? NOISE_FOR.flat!;
-  const made = noise(SIZE, spec.lattice, spec.octaves, spec.seed, spec.stretch);
+  const made = noise(surfaceSize(), spec.lattice, spec.octaves, spec.seed, spec.stretch);
   noiseCache.set(surface, made);
   return made;
 }
 
+/** The three textures every surface family is built from. */
+export interface SurfaceMaps {
+  /** sRGB. Modulates the material colour. */
+  albedo: THREE.CanvasTexture;
+  /** Linear, tangent-space. Null in draft quality, where it costs more than it gives. */
+  normal: THREE.CanvasTexture | null;
+  /** Linear. Encodes a multiplier on `material.roughness`. */
+  rough: THREE.CanvasTexture | null;
+}
+
+/** Wrap a pixel index, because the normal gradient of a tiling texture wraps too. */
+const wrap = (i: number, size: number) => (i + size) % size;
+
 /**
- * The colour/height map for a surface family, or null for a family that wants
- * none. Generated once per family and shared by every material using it.
+ * Tangent-space normal map from a height field, by central difference.
+ *
+ * A Sobel kernel would be marginally better on the diagonals and costs eight
+ * reads per texel instead of four; at 512×512 across fourteen families this is
+ * built once and never again, so the four-read version wins.
+ *
+ * Sign convention: three.js samples textures with `flipY` on by default, so a
+ * canvas row maps to increasing V upward. The tangent frame's +Y is therefore
+ * *up the canvas*, which is why the vertical difference is `up - down` and not
+ * the other way round. Getting this backwards produces a surface whose every
+ * joint appears lit from underneath — subtle, and easy to miss without a
+ * render to check it against.
  */
-export function surfaceTexture(surface: string | undefined): THREE.Texture | null {
+function normalFromHeight(height: Float32Array, size: number, strength: number): THREE.CanvasTexture {
+  const px = new Uint8ClampedArray(size * size * 4);
+  const half = strength * 0.5;
+
+  for (let y = 0; y < size; y++) {
+    const yUp = wrap(y - 1, size) * size;
+    const yDn = wrap(y + 1, size) * size;
+    const row = y * size;
+    for (let x = 0; x < size; x++) {
+      const xL = wrap(x - 1, size);
+      const xR = wrap(x + 1, size);
+      const gx = (height[row + xR]! - height[row + xL]!) * half;
+      const gy = (height[yUp + x]! - height[yDn + x]!) * half;
+
+      const inv = 1 / Math.hypot(gx, gy, 1);
+      const i = (row + x) * 4;
+      px[i] = (gx * inv * 0.5 + 0.5) * 255;
+      px[i + 1] = (gy * inv * 0.5 + 0.5) * 255;
+      px[i + 2] = (inv * 0.5 + 0.5) * 255;
+      px[i + 3] = 255;
+    }
+  }
+  // NOT sRGB. These are vectors, not colours; gamma-decoding them is the bug
+  // this whole function exists to stop repeating.
+  return textureFrom(px, size, false, 8);
+}
+
+/**
+ * Roughness map from the same field, inverted.
+ *
+ * Low spots are rougher than high spots, because that is what happens to a real
+ * surface: grout, the groove between floorboards and the weave of a carpet all
+ * scatter where the high point of a material would have polished it. The
+ * relationship is inverted and compressed rather than used directly, so a
+ * family whose painter works in a narrow band around 0.95 still produces a
+ * visible spread instead of a flat white map.
+ */
+function roughFromHeight(height: Float32Array, size: number): THREE.CanvasTexture {
+  const px = new Uint8ClampedArray(size * size * 4);
+
+  for (let i = 0; i < height.length; i++) {
+    // height runs in a narrow band around ~0.95; expand it across the whole
+    // usable range so a subtle painter still yields a visible map.
+    const centred = (height[i]! - 0.92) * 6;
+    const v = Math.max(0, Math.min(1, ROUGH_MEAN + (0.5 - centred) * ROUGH_SPREAD));
+    const b = Math.round(v * 255);
+    const o = i * 4;
+    px[o] = b;
+    px[o + 1] = b; // three reads GREEN for roughness.
+    px[o + 2] = b;
+    px[o + 3] = 255;
+  }
+  // Roughness is low-frequency; sampling it hard is pure waste.
+  return textureFrom(px, size, false, 4);
+}
+
+/** Build one canvas from an RGBA buffer and hand back a tiling texture. */
+function textureFrom(
+  px: Uint8ClampedArray,
+  size: number,
+  srgb: boolean,
+  anisotropy: number,
+): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    const img = ctx.createImageData(size, size);
+    img.data.set(px);
+    ctx.putImageData(img, 0, 0);
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  tex.anisotropy = anisotropy;
+  return tex;
+}
+
+/**
+ * The maps for a surface family, or null for a family that wants none.
+ * Generated once per family and shared by every material using it.
+ */
+export function surfaceMaps(surface: string | undefined): SurfaceMaps | null {
   if (!surface) return null;
   const painter = PAINTERS[surface];
   if (!painter) return null;
   const cached = textureCache.get(surface);
   if (cached) return cached;
 
+  const size = surfaceSize();
   const canvas = document.createElement('canvas');
-  canvas.width = SIZE;
-  canvas.height = SIZE;
+  canvas.width = size;
+  canvas.height = size;
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
-  const img = ctx.createImageData(SIZE, SIZE);
-  painter(noiseFor(surface), img.data, SIZE);
+  const img = ctx.createImageData(size, size);
+  painter(noiseFor(surface), img.data, size);
   ctx.putImageData(img, 0, 0);
 
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  // The texture modulates a colour, so it is authored in sRGB; the bump
-  // channel three reads is the red one either way.
-  tex.colorSpace = THREE.SRGBColorSpace;
-  // Sixteen, not four. The lawn is thirty metres across and the camera looks
+  const albedo = new THREE.CanvasTexture(canvas);
+  albedo.wrapS = THREE.RepeatWrapping;
+  albedo.wrapT = THREE.RepeatWrapping;
+  // The texture modulates a colour, so it is authored in sRGB.
+  albedo.colorSpace = THREE.SRGBColorSpace;
+  // Eight, not four. The lawn is thirty metres across and the camera looks
   // along it, so the ground is at a grazing angle where the sampled footprint
   // is wildly anisotropic — a one-pixel-tall smear stretched over several
   // metres. At four samples the mip level chosen for that footprint is far too
-  // sharp and the lawn combs into long streaks; sixteen is what it takes to
-  // stop that. three.js clamps this to what the driver reports, so asking for
-  // more than a given GPU supports costs nothing.
-  tex.anisotropy = 8;
-  textureCache.set(surface, tex);
-  return tex;
+  // sharp and the lawn combs into long streaks. three.js clamps this to what
+  // the driver reports, so asking for more than a given GPU supports costs
+  // nothing.
+  albedo.anisotropy = 8;
+
+  // The painter's greyscale is the height field. Read it back out of the
+  // buffer rather than running the painter twice — it is the same pixels, and
+  // running it twice would be the same picture only by accident.
+  const height = new Float32Array(size * size);
+  for (let i = 0; i < height.length; i++) height[i] = img.data[i * 4]! / 255;
+
+  const realistic = quality === 'realistic';
+  const made: SurfaceMaps = {
+    albedo,
+    normal: realistic ? normalFromHeight(height, size, NORMAL_STRENGTH[surface] ?? 1.5) : null,
+    rough: realistic ? roughFromHeight(height, size) : null,
+  };
+  textureCache.set(surface, made);
+  return made;
+}
+
+/** Back-compat accessor for the albedo alone. */
+export function surfaceTexture(surface: string | undefined): THREE.Texture | null {
+  return surfaceMaps(surface)?.albedo ?? null;
 }
 
 // ──────────────────────────────────────────────────────────────── materials ───
@@ -364,38 +590,52 @@ export function materialFor(spec: MaterialSpec): THREE.Material {
   const cached = materialCache.get(key);
   if (cached) return cached;
 
-  const tex = surfaceTexture(spec.surface);
+  const maps = surfaceMaps(spec.surface);
   const params: THREE.MeshStandardMaterialParameters = {
     color: new THREE.Color(spec.color),
-    roughness: spec.roughness,
+    // Divided by the roughness map's mean, because three *multiplies* by the
+    // map. Without this every textured surface would come out visibly rougher
+    // than the scene model asked for — the map sits below white on purpose so
+    // it has room to push variation upwards as well as down.
+    //
+    // Not clamped back to 1. The roof asks for 0.96 and the lawn for 1.0, and
+    // clamping the divisor's output to unity quietly handed both of them 0.9
+    // instead — a fifth of a stop of gloss they were not meant to lose. three
+    // does not clamp the value it uploads, so letting it past 1 is safe.
+    roughness: maps?.rough ? spec.roughness / ROUGH_MEAN : spec.roughness,
     metalness: spec.metalness,
     transparent: spec.opacity < 1,
     opacity: spec.opacity,
   };
-  if (tex && (rx !== 1 || ry !== 1)) {
-    // A copy, because repeat is per-material and the texture is shared. The
-    // copy shares the source image, so this costs a second sampler binding and
-    // not a second upload.
-    const t = tex.clone();
-    t.needsUpdate = true;
-    t.repeat.set(rx, ry);
-    params.map = t;
-    params.bumpMap = t;
-  } else if (tex) {
-    params.map = tex;
-    params.bumpMap = tex;
-  }
-  if (tex) {
-    // Bump in metres. Small on purpose: this is surface tooth, not masonry.
-    params.bumpScale = 0.012;
+
+  if (maps) {
+    // A copy per map, because repeat lives on the texture and the texture is
+    // shared by every surface of the same family. The copy shares the source
+    // image, so this costs a sampler binding and not an upload.
+    const at = (t: THREE.Texture | null) => {
+      if (!t) return null;
+      if (rx === 1 && ry === 1) return t;
+      const c = t.clone();
+      c.needsUpdate = true;
+      c.repeat.set(rx, ry);
+      return c;
+    };
+    params.map = at(maps.albedo);
+    if (maps.normal) {
+      params.normalMap = at(maps.normal);
+      // 0.012 was the old bump figure in metres; normal maps are unitless
+      // tangents, and this is the equivalent perceived strength of a plaster
+      // tooth rather than a silhouette.
+      params.normalScale = new THREE.Vector2(0.55, 0.55);
+    }
+    if (maps.rough) params.roughnessMap = at(maps.rough);
   }
 
-  // The sky is a *reflected* environment on the surfaces that reflect, not a
-  // global one. Setting `scene.environment` would light every wall with it,
-  // which costs an image-based-lighting lookup on every pixel of a full-screen
-  // render — by far the most expensive thing in the frame — to produce a
-  // difference on painted render that nobody can see. Glass and metal are
-  // where the same lookup is the whole point, so only they pay for it.
+  // Reflective surfaces carry the sky explicitly. Everything else takes it from
+  // `scene.environment`, which `Scene` sets from the same texture via a PMREM —
+  // see `environmentFromSky`. Setting `scene.environment` is what makes a
+  // painted render pick up sky from above and warm ground bounce from below
+  // instead of reading as a flat swatch under two point lights.
   const reflective = spec.glass || spec.metalness > 0.3;
   if (reflective) params.envMap = skyTexture();
   if (reflective) params.envMapIntensity = spec.glass ? 1.5 : 0.85;
@@ -457,13 +697,23 @@ export function skyTexture(): THREE.CanvasTexture {
     // green wall behind the house with a hard line where the plot ended. Real
     // ground at that distance is haze, so the lower half fades into the same
     // near-white the fog uses and the plot boundary simply dissolves.
-    sky.addColorStop(0, '#7ea7cf');
-    sky.addColorStop(0.28, '#a6c3dd');
-    sky.addColorStop(0.44, '#ccd9e2');
-    sky.addColorStop(0.5, '#e9e2d1');
-    sky.addColorStop(0.58, '#e7e2d5');
-    sky.addColorStop(0.78, '#ded9cb');
-    sky.addColorStop(1, '#d5d2c4');
+    //
+    // The whole ramp is cooler and a little less saturated than the cream it
+    // replaced, and the horizon stop is now *exactly* the fog colour set in
+    // `Scene` — that equality is what dissolves the plot edge, so if either
+    // side of it is re-toned the other has to move with it.
+    //
+    // The lower half is also what the environment map returns as "ground", so
+    // cooling it cools the bounce light every interior surface receives. That
+    // is the point: the sun stays warm, and warm light on a cool ambient is
+    // what separates daylight from an overcast afternoon.
+    sky.addColorStop(0, '#7ba0c6');
+    sky.addColorStop(0.28, '#a4bcd6');
+    sky.addColorStop(0.44, '#c8d5e0');
+    sky.addColorStop(0.5, '#e4e8ec');
+    sky.addColorStop(0.58, '#e2e6eb');
+    sky.addColorStop(0.78, '#dee2e8');
+    sky.addColorStop(1, '#d9dee5');
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, w, h);
   }
@@ -472,6 +722,57 @@ export function skyTexture(): THREE.CanvasTexture {
   tex.colorSpace = THREE.SRGBColorSpace;
   skyCache = tex;
   return tex;
+}
+
+let envCache: THREE.Texture | null = null;
+
+/**
+ * The sky, pre-filtered for image-based lighting.
+ *
+ * This is the change that decides whether the house looks like a house.
+ *
+ * A `MeshStandardMaterial` lit only by lights is not a physical surface — it is
+ * a diffuse colour multiplied by a cosine. What makes plaster read as plaster
+ * and a window frame as a window frame is everything the lighting equations
+ * deliberately leave out: the dim blue light a north wall receives from the whole
+ * sky at once, the warm bounce a wall receives off the lawn, the grazing
+ * highlight that travels across a surface as the camera moves. All of that is
+ * `scene.environment`, and all of it was absent — the comment above used to say
+ * the ambient "comes from the environment map instead" while no environment map
+ * existed anywhere in the scene.
+ *
+ * A PMREM is required rather than the raw equirectangular canvas: roughness in
+ * a PBR shader indexes a pre-blurred mip chain, and sampling a single sharp
+ * image at every roughness makes every rough surface sparkle with aliasing.
+ * `PMREMGenerator` builds exactly that chain. It runs once, on a 256×128
+ * source, which costs a few milliseconds and then nothing per frame.
+ *
+ * Gate: this is the one genuinely expensive thing in the frame, because it is a
+ * lookup per pixel per fragment. On a GPU it is free. Under SwiftShader — which
+ * is what the automated suite drives — it is not, so `Scene` only sets it when
+ * the renderer reports something other than a software rasteriser.
+ */
+export function environmentFromSky(renderer: THREE.WebGLRenderer): THREE.Texture | null {
+  if (envCache) return envCache;
+  try {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    // The sky is already an sRGB canvas; compiling it into the equirect input
+    // is what PMREM wants, and from then on the chain is linear.
+    const source = pmrem.fromEquirectangular(skyTexture());
+    envCache = source.texture;
+    pmrem.dispose();
+    return envCache;
+  } catch {
+    // A driver without float render targets cannot build a PMREM chain. That
+    // is a legitimate outcome, not a failure: the scene falls back to lights.
+    return null;
+  }
+}
+
+/** Drop the cached environment, so it can be rebuilt against a new renderer. */
+export function disposeEnvironment(): void {
+  envCache?.dispose();
+  envCache = null;
 }
 
 // ──────────────────────────────────────────────────────────────── geometry ───

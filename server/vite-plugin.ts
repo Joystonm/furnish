@@ -13,12 +13,13 @@
  * dynamic import is awaited before the middleware is used.
  */
 import type { Plugin } from 'vite';
+import { aiDisabledByConfig } from './minimax.ts';
 
 export function apiPlugin(): Plugin {
   let mount: ((req: any, res: any, next: any) => void) | null = null;
 
   return {
-    name: 'argon:api',
+    name: 'furnish:api',
     async configureServer(server) {
       const { loadEnv } = await import('./env.ts');
       const applied = loadEnv(server.config.root);
@@ -33,7 +34,7 @@ export function apiPlugin(): Plugin {
 
       const { isConfigured, clientConfig } = await import('./minimax.ts');
       const log = server.config.logger.info.bind(server.config.logger);
-      log('\n  Argon API routes mounted at /api/*');
+      log('\n  Furnish API routes mounted at /api/*');
       if (applied.length) log(`  Loaded from .env: ${applied.join(', ')}`);
 
       if (isConfigured()) {
@@ -47,8 +48,12 @@ export function apiPlugin(): Plugin {
           '  AI: MINIMAX_API_KEY is set but empty, so .env was not used.\n' +
             '     An empty value already in the environment wins over the file.\n',
         );
-      } else if (process.env.ARGON_DISABLE_AI === 'true') {
-        log('  AI: disabled by ARGON_DISABLE_AI=true\n');
+      } else if (aiDisabledByConfig()) {
+        log(
+          `  AI: disabled by ${
+            process.env.FURNISH_DISABLE_AI === 'true' ? 'FURNISH_DISABLE_AI=true' : 'ARGON_DISABLE_AI=true'
+          } (pre-rename name)\n`,
+        );
       } else {
         log('  AI: no key. Set MINIMAX_API_KEY in .env and restart the dev server.\n');
       }

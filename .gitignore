@@ -10,6 +10,11 @@ test-results
 playwright-report
 *.tsbuildinfo
 
+# Verification pictures. They are written by `npm run e2e` (e2e/screens.spec.ts)
+# and by `scripts/stairwalk.mjs`, and both commands write them again on the next
+# run — outputs of a run, not source. FEATURE_MATRIX.md says what each one shows.
+shots/
+
 # Output of scripts/live-assistant-check.mjs, which drives the real service.
 live-assistant.png
 
@@ -19,3 +24,5 @@ live-assistant.png
 # The notes in _research/ are mine and are kept.
 _research/alza/
 _research/archmorph/
+# kane-cli context store: shared through a location, never merged with git
+.context/

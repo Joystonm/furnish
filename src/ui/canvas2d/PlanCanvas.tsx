@@ -17,6 +17,7 @@ import type { ElementKind, Floor, FurnitureItem, Opening, Project, Room, Wall } 
 import { TOL, footprintOfItem, formatLength, rectContains, v } from '../../model/geometry.ts';
 import { KIND_LABEL, catalogById, defaultRoomFootprint } from '../../model/catalog.ts';
 import { validate } from '../../model/validate.ts';
+import { provenanceLine } from '../../model/provenance.ts';
 import { useProject } from '../../store/useProject.ts';
 import {
   fitTransform,
@@ -33,46 +34,55 @@ import { ContextMenu, type MenuTarget } from './ContextMenu.tsx';
 import { WALL_FILL, wallPiers } from './poche.ts';
 import { DoorSymbol, FurnitureGlyph, WindowSymbol } from './symbols.tsx';
 
+/**
+ * The drawing palette.
+ *
+ * SVG cannot read Tailwind tokens, so the plan carries its own copy — but it is
+ * a *drawing* palette, not a UI palette, and it answers to drafting convention
+ * rather than to brand. Two values are load-bearing and must not drift:
+ *
+ *   · `roomStrokeSelected` and `guide` are blue `#2563eb`. Blue is the selection
+ *     colour in every CAD tool and, more practically here, it is what
+ *     `e2e/editor.spec.ts` reads off the rendered SVG to work out what the user
+ *     has selected. The app accent is teal, which is deliberately a *different*
+ *     hue so "armed tool" never looks like "selected geometry".
+ *   · `error` is red `#dc2626`, asserted by the same spec.
+ *
+ * Everything else is cool grey, matching the chrome, with the wall poché kept
+ * dark and high-contrast — the linework is the drawing, and the fills are only
+ * there to let the linework read.
+ */
 const C = {
-  plot: '#efece4',
-  plotEdge: '#b9b2a3',
-  setback: '#c9c2b1',
-  roomStroke: '#8d8577',
+  plot: '#eaeef3',
+  plotEdge: '#b6c1cd',
+  setback: '#ccd5df',
+  roomStroke: '#94a3b8',
   roomStrokeSelected: '#2563eb',
-  floor: '#fdfcfa',
-  outdoor: '#f1f4f0',
-  wall: '#3f3a33',
-  wallExterior: '#2b2722',
-  opening: '#fbfaf7',
-  glass: '#5b8ba6',
-  furniture: '#c9c2b1',
-  furnitureStroke: '#9a9284',
-  label: '#3f3a33',
-  labelDim: '#8d8577',
+  floor: '#fbfcfd',
+  outdoor: '#eaf1ef',
+  wall: '#334155',
+  wallExterior: '#1e293b',
+  opening: '#fbfcfd',
+  glass: '#6b9bb8',
+  furniture: '#d3dbe4',
+  furnitureStroke: '#a3b1c0',
+  label: '#334155',
+  labelDim: '#94a3b8',
   guide: '#2563eb',
-  measure: '#b45309',
+  measure: '#0d9488',
   error: '#dc2626',
 } as const;
 
-const KIND_TINT: Record<string, string> = {
-  living: '#fdf6ec',
-  dining: '#fdf6ec',
-  kitchen: '#fdf6ec',
-  bedroom: '#f2f6fc',
-  bathroom: '#f0f9fb',
-  guest: '#f2f6fc',
-  office: '#f5f3fb',
-  prayer: '#f7f4fb',
-  storage: '#f6f5f2',
-  utility: '#f6f5f2',
-  pantry: '#f6f5f2',
-  corridor: '#f8f7f4',
-  hall: '#f8f7f4',
-  lobby: '#f8f7f4',
-  garage: '#f4f3f0',
-  balcony: '#f3faf6',
-  terrace: '#f3faf6',
-};
+/**
+ * Outdoors is the one place the plan tints by kind.
+ *
+ * There used to be an eighteen-entry `KIND_TINT` table giving every room kind
+ * its own pastel. Rooms stopped using it — a drafted plan does not colour its
+ * rooms by function, and doing so was the single strongest reason the plan read
+ * as a diagram rather than as a floor plan. Only the outdoor/deck fill
+ * survived, so only that one entry remains.
+ */
+const OUTDOOR_FILL = '#e8f2ee';
 
 /** How close, in metres, a dragged edge must come to real geometry to snap to it. */
 const SNAP_TOLERANCE_M = 0.28;
@@ -123,6 +133,11 @@ export function PlanCanvas({ highlightIds = [], onRegister }: PlanCanvasProps) {
   // Validation is a pure function of the project, so a memo on the revision
   // is exactly right: same revision ⇒ same issues, no recompute.
   const issues = useMemo(() => validate(project), [project]);
+
+  // Who drew this, said on the drawing itself. The Checks panel carries the
+  // long form; this is the line that cannot be missed — a claim that only
+  // exists in a toast is a claim that is gone eleven seconds later.
+  const provenance = useMemo(() => provenanceLine(project), [project]);
 
   // ── sizing / fit ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -631,13 +646,13 @@ export function PlanCanvas({ highlightIds = [], onRegister }: PlanCanvasProps) {
     for (let x = x0; x <= x1; x += step, n++) {
       const sx = x * view.scale + view.offsetX;
       const major = Math.abs(x / majorUnit - Math.round(x / majorUnit)) < 1e-6;
-      out.push(<line key={`gx${n}`} x1={sx} y1={0} x2={sx} y2={size.height} stroke={major ? '#d9d3c7' : '#e8e4dc'} strokeWidth={major ? 1 : 0.5} />);
+      out.push(<line key={`gx${n}`} x1={sx} y1={0} x2={sx} y2={size.height} stroke={major ? '#d3dce6' : '#e4e9ef'} strokeWidth={major ? 1 : 0.5} />);
     }
     n = 0;
     for (let y = y0; y <= y1; y += step, n++) {
       const sy = y * view.scale + view.offsetY;
       const major = Math.abs(y / majorUnit - Math.round(y / majorUnit)) < 1e-6;
-      out.push(<line key={`gy${n}`} x1={0} y1={sy} x2={size.width} y2={sy} stroke={major ? '#d9d3c7' : '#e8e4dc'} strokeWidth={major ? 1 : 0.5} />);
+      out.push(<line key={`gy${n}`} x1={0} y1={sy} x2={size.width} y2={sy} stroke={major ? '#d3dce6' : '#e4e9ef'} strokeWidth={major ? 1 : 0.5} />);
     }
     return <g data-testid="plan-grid">{out}</g>;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -660,12 +675,12 @@ export function PlanCanvas({ highlightIds = [], onRegister }: PlanCanvasProps) {
 
         {/* One defs block for the whole drawing. These used to be emitted per
             stair and per room, which put duplicate ids in the DOM and made
-            `url(#argon-arrow)` depend on render order. */}
+            `url(#furnish-arrow)` depend on render order. */}
         <defs>
-          <marker id="argon-arrow" markerWidth={7} markerHeight={7} refX={3} refY={3.5} orient="auto">
-            <path d="M0,0 L7,3.5 L0,7 Z" fill="#6b6357" />
+          <marker id="furnish-arrow" markerWidth={7} markerHeight={7} refX={3} refY={3.5} orient="auto">
+            <path d="M0,0 L7,3.5 L0,7 Z" fill="#64748b" />
           </marker>
-          <pattern id="argon-hatch" width={6} height={6} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <pattern id="furnish-hatch" width={6} height={6} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <line x1={0} y1={0} x2={0} y2={6} stroke={C.setback} strokeWidth={1} />
           </pattern>
         </defs>
@@ -727,7 +742,7 @@ export function PlanCanvas({ highlightIds = [], onRegister }: PlanCanvasProps) {
             w={o.width}
             d={o.depth}
             view={view}
-            fill={KIND_TINT.balcony}
+            fill={OUTDOOR_FILL}
             stroke={C.roomStroke}
             sw={1}
             dash="4 3"
@@ -808,6 +823,24 @@ export function PlanCanvas({ highlightIds = [], onRegister }: PlanCanvasProps) {
         <ScaleBar view={view} units={project.displayUnits} x={16} y={size.height - 18} />
       </svg>
 
+      {provenance && (
+        // A title-block line: who designed the plan, stated where the plan is.
+        //
+        // It sits above the scale bar at the bottom left rather than at the top
+        // left, because the top left of the drawing is where the plot caption
+        // sits — and a statement that hides the drawing's own numbers is not
+        // worth making. It takes no pointer events, so the drawing underneath
+        // stays fully draggable.
+        <div
+          className={`pointer-events-none absolute bottom-11 left-3 max-w-[min(60%,420px)] rounded-control border px-2.5 py-1.5 text-[11px] font-medium leading-snug shadow-panel backdrop-blur ${
+            provenance.tone === 'warn' ? 'border-warn/30 bg-surface/92 text-warn' : 'border-ok/30 bg-surface/92 text-ok'
+          }`}
+          data-testid="provenance-banner"
+        >
+          {provenance.text}
+        </div>
+      )}
+
       {menu && (
         <ContextMenu
           target={menu.target}
@@ -820,7 +853,7 @@ export function PlanCanvas({ highlightIds = [], onRegister }: PlanCanvasProps) {
 
       <TraceOverlay view={view} size={size} toPlan={toPlan} />
 
-      <div className="pointer-events-none absolute bottom-3 right-3 rounded border border-stone-200 bg-white/90 px-2 py-1 text-[11px] tabular-nums text-stone-500 shadow-sm">
+      <div className="pointer-events-none absolute bottom-3 right-3 rounded-control border border-line bg-surface/90 px-2.5 py-1.5 text-[11px] tabular-nums text-inkSoft shadow-panel backdrop-blur">
         {Math.round(view.scale)} px/m · grid {gridStep} m · {rooms.length} rooms · {walls.length} walls
       </div>
     </div>
@@ -904,7 +937,7 @@ function RoomShape({
     <g data-testid="room" data-room-id={room.id} data-kind={room.kind} style={{ cursor: 'move' }}>
       <rect x={px} y={py} width={pw} height={ph} fill={fill} />
       {room.outdoor && (
-        <rect x={px} y={py} width={pw} height={ph} fill="url(#argon-hatch)" stroke="none" />
+        <rect x={px} y={py} width={pw} height={ph} fill="url(#furnish-hatch)" stroke="none" />
       )}
       {/* The stroke is a hairline that sits *under* the wall poché, so a room
           with a wall on every side shows wall, not a second outline. */}
@@ -1187,24 +1220,24 @@ function StairShape({ stair, view, selected }: { stair: Project['stairs'][number
   const step = h / treads;
   const lines = [];
   for (let i = 1; i < treads; i++) {
-    lines.push(<line key={i} x1={x} y1={y + i * step} x2={x + w} y2={y + i * step} stroke="#8d8577" strokeWidth={0.75} />);
+    lines.push(<line key={i} x1={x} y1={y + i * step} x2={x + w} y2={y + i * step} stroke="#94a3b8" strokeWidth={0.75} />);
   }
   const up = stair.direction === 1;
   return (
     <g data-testid="stair" data-stair-id={stair.id}>
-      <rect x={x} y={y} width={w} height={h} fill="#f2efe8" stroke={selected ? C.roomStrokeSelected : C.roomStroke} strokeWidth={selected ? 2 : 1} />
+      <rect x={x} y={y} width={w} height={h} fill="#f1f5f9" stroke={selected ? C.roomStrokeSelected : C.roomStroke} strokeWidth={selected ? 2 : 1} />
       {lines}
       <line
         x1={x + w / 2}
         y1={up ? y + h - 10 : y + 10}
         x2={x + w / 2}
         y2={up ? y + 10 : y + h - 10}
-        stroke="#6b6357"
+        stroke="#64748b"
         strokeWidth={1.4}
-        markerEnd="url(#argon-arrow)"
+        markerEnd="url(#furnish-arrow)"
       />
       {h > 40 && w > 44 && (
-        <text x={x + w / 2} y={y + h / 2 + 3} textAnchor="middle" fontSize={10} fill="#6b6357">
+        <text x={x + w / 2} y={y + h / 2 + 3} textAnchor="middle" fontSize={10} fill="#64748b">
           {stair.riserCount} risers
         </text>
       )}
@@ -1277,7 +1310,7 @@ function FurnitureShape({
           y={cy + 3.5}
           textAnchor="middle"
           fontSize={9.5}
-          fill="#4a443c"
+          fill="#64748b"
           style={{ pointerEvents: 'none' }}
         >
           {item.label}
@@ -1382,9 +1415,9 @@ function MeasureReadout({ a, b, view, units }: { a: { x: number; y: number }; b:
 function NorthArrow({ x, y, rotationDeg }: { x: number; y: number; rotationDeg: number }) {
   return (
     <g transform={`translate(${x} ${y}) rotate(${rotationDeg})`} opacity={0.65}>
-      <circle r={16} fill="none" stroke="#8d8577" strokeWidth={1} />
-      <path d="M0,-13 L4.5,4 L0,1.5 L-4.5,4 Z" fill="#3f3a33" />
-      <text y={13} textAnchor="middle" fontSize={9} fill="#3f3a33" fontWeight={700}>
+      <circle r={16} fill="none" stroke="#94a3b8" strokeWidth={1} />
+      <path d="M0,-13 L4.5,4 L0,1.5 L-4.5,4 Z" fill="#334155" />
+      <text y={13} textAnchor="middle" fontSize={9} fill="#334155" fontWeight={700}>
         N
       </text>
     </g>
@@ -1397,10 +1430,10 @@ function ScaleBar({ view, units, x, y }: { view: ViewTransform; units: 'm' | 'ft
   const w = nice * view.scale;
   return (
     <g transform={`translate(${x} ${y})`} opacity={0.8}>
-      <line x1={0} y1={0} x2={w} y2={0} stroke="#3f3a33" strokeWidth={1.5} />
-      <line x1={0} y1={-3} x2={0} y2={3} stroke="#3f3a33" strokeWidth={1.5} />
-      <line x1={w} y1={-3} x2={w} y2={3} stroke="#3f3a33" strokeWidth={1.5} />
-      <text x={w / 2} y={-6} textAnchor="middle" fontSize={10} fill="#3f3a33">
+      <line x1={0} y1={0} x2={w} y2={0} stroke="#334155" strokeWidth={1.5} />
+      <line x1={0} y1={-3} x2={0} y2={3} stroke="#334155" strokeWidth={1.5} />
+      <line x1={w} y1={-3} x2={w} y2={3} stroke="#334155" strokeWidth={1.5} />
+      <text x={w / 2} y={-6} textAnchor="middle" fontSize={10} fill="#334155">
         {formatLength(nice, units, 0)}
       </text>
     </g>

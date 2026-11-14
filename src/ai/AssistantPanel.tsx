@@ -81,8 +81,8 @@ export function AssistantPanel({ onClose }: { onClose(): void }) {
   const pending = turns.some((t) => t.pending);
 
   return (
-    <aside className="flex w-[336px] shrink-0 flex-col border-l border-line bg-surface" aria-label="Design assistant" data-testid="assistant-panel">
-      <header className="flex h-9 shrink-0 items-center gap-2 border-b border-line px-3">
+    <aside className="flex w-[336px] shrink-0 flex-col border-l border-line bg-surface shadow-panel" aria-label="Design assistant" data-testid="assistant-panel">
+      <header className="panel-head">
         <span className="panel-title">Assistant</span>
         {health && (
           <span className={`chip ${health.aiEnabled ? 'chip-ok' : ''}`} title={health.endpoint ? `MiniMax at ${health.endpoint}` : 'No model configured'}>
@@ -91,21 +91,21 @@ export function AssistantPanel({ onClose }: { onClose(): void }) {
         )}
         <div className="flex-1" />
         {pending && (
-          <button className="btn btn-ghost h-6 px-1.5 text-[11px]" onClick={() => abortRef.current?.abort()}>
+          <button className="btn btn-ghost px-2 text-[12px]" onClick={() => abortRef.current?.abort()}>
             Stop
           </button>
         )}
-        <button className="btn btn-ghost btn-icon h-6 w-6" onClick={onClose} aria-label="Close the assistant">
+        <button className="btn btn-ghost btn-icon" onClick={onClose} aria-label="Close the assistant">
           <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden><path d="M1 1l9 9M10 1l-9 9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
         </button>
       </header>
 
       {/* ── health notice ── */}
       {health && !health.aiEnabled && (
-        <div className="shrink-0 border-b border-line bg-paper px-3 py-2">
-          <p className="text-[11px] leading-snug text-inkSoft">
+        <div className="shrink-0 border-b border-line bg-raised px-3.5 py-2.5">
+          <p className="text-[12px] leading-snug text-inkSoft">
             {health.disabledByConfig
-              ? 'The assistant is switched off with ARGON_DISABLE_AI. Everything else in Argon works as normal.'
+              ? 'The assistant is switched off with FURNISH_DISABLE_AI. Everything else in Furnish works as normal.'
               : 'No MiniMax API key is configured, so the assistant is unavailable. You can still draw, measure, validate, walk and export — the studio does not depend on it.'}
           </p>
           {!health.disabledByConfig && (
@@ -115,11 +115,11 @@ export function AssistantPanel({ onClose }: { onClose(): void }) {
       )}
 
       {/* ── transcript ── */}
-      <div ref={logRef} className="scroll-y min-h-0 flex-1 space-y-3 p-3" data-testid="assistant-log">
+      <div ref={logRef} className="scroll-y min-h-0 flex-1 space-y-3 bg-paper p-3" data-testid="assistant-log">
         {turns.length === 0 && (
           <div className="py-4">
-            <p className="text-[12px] leading-snug text-inkSoft">
-              Ask for a change in plain language. Argon turns the request into typed operations, checks them against the current
+            <p className="text-[13px] leading-snug text-inkSoft">
+              Ask for a change in plain language. Furnish turns the request into typed operations, checks them against the current
               model, applies them one at a time, and re-measures the result.
             </p>
             <p className="hint mt-2">
@@ -141,9 +141,9 @@ export function AssistantPanel({ onClose }: { onClose(): void }) {
       </div>
 
       {/* ── composer ── */}
-      <div className="shrink-0 border-t border-line p-2">
+      <div className="shrink-0 border-t border-line bg-surface p-2.5">
         <textarea
-          className="field h-16 resize-none py-1.5 text-[12px] leading-snug"
+          className="field h-20 resize-none py-2 text-[13px] leading-snug"
           placeholder={health?.aiEnabled ? 'Make the living room bigger…' : 'The assistant needs an API key to answer.'}
           value={draft}
           disabled={!health?.aiEnabled || pending}
@@ -156,7 +156,7 @@ export function AssistantPanel({ onClose }: { onClose(): void }) {
             }
           }}
         />
-        <div className="mt-1.5 flex items-center gap-1.5">
+        <div className="mt-2 flex items-center gap-2">
           <span className="hint flex-1">Enter to send · Shift+Enter for a new line</span>
           <button className="btn btn-accent" onClick={() => void ask(draft)} disabled={!draft.trim() || pending || !health?.aiEnabled} data-testid="assistant-send">
             {pending ? 'Working…' : 'Send'}
@@ -180,7 +180,7 @@ function TurnView({ turn }: { turn: Turn }) {
   return (
     <div className="space-y-2">
       <div className="flex justify-end">
-        <p className="max-w-[85%] rounded-lg bg-ink px-2.5 py-1.5 text-[12px] leading-snug text-paper">{turn.request}</p>
+        <p className="max-w-[85%] rounded-card rounded-br-sm bg-ink px-3 py-2 text-[13px] leading-snug text-white">{turn.request}</p>
       </div>
 
       {turn.pending && (
@@ -207,30 +207,30 @@ function TurnView({ turn }: { turn: Turn }) {
       {report && (
         <>
           {report.reply && (
-            <p className="whitespace-pre-wrap rounded-lg border border-line bg-paper px-2.5 py-2 text-[12px] leading-snug text-ink" data-testid="assistant-reply">
+            <p className="card whitespace-pre-wrap px-3 py-2.5 text-[13px] leading-snug text-ink shadow-panel" data-testid="assistant-reply">
               {report.reply}
             </p>
           )}
 
-          {/* The model may have written a layout. Argon draws from operations,
+          {/* The model may have written a layout. Furnish draws from operations,
               not from words — so when nothing ran, the reply above is an
               intention, not a description of the plan on screen, and it is
               labelled as such rather than left to be read as a change. */}
           {report.changedNothing && (
-            <p className="rounded-lg border border-warn/30 bg-warn/[0.07] px-2.5 py-2 text-[12px] leading-snug text-ink" data-testid="assistant-nothing-changed">
-              Nothing on the plan changed. The assistant described a design in words but ran no operations, and Argon draws
+            <p className="rounded-card border border-warn/25 bg-warn/[0.07] px-3 py-2.5 text-[13px] leading-snug text-ink" data-testid="assistant-nothing-changed">
+              Nothing on the plan changed. The assistant described a design in words but ran no operations, and Furnish draws
               the plan from operations only. Ask it again, or draw the rooms yourself with the room tool.
             </p>
           )}
 
           {report.error && !report.reply.includes(report.error) && (
-            <p className="rounded-lg border border-danger/30 bg-danger/[0.06] px-2.5 py-2 text-[12px] leading-snug text-danger">
+            <p className="rounded-card border border-danger/25 bg-danger/[0.07] px-3 py-2.5 text-[13px] leading-snug text-danger">
               {report.error}
             </p>
           )}
 
           {/* Step 10: the numbers are ours, not the model's. */}
-          <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 rounded border border-line px-2.5 py-2 text-[11px]" data-testid="assistant-after">
+          <dl className="card grid grid-cols-2 gap-x-3 gap-y-1 px-3 py-2.5 text-[11px] shadow-panel" data-testid="assistant-after">
             <Stat label="Net indoor" value={formatArea(report.after.netIndoorArea, 'm')} />
             <Stat label="Coverage" value={`${(report.after.plotCoverage * 100).toFixed(1)}%`} />
             <Stat label="FAR" value={report.after.floorAreaRatio.toFixed(2)} />
@@ -256,7 +256,7 @@ function StepRow({ step }: { step: StepReport }) {
     : 'text-inkSoft';
 
   return (
-    <li className="flex items-start gap-1.5 px-1 text-[11px] leading-snug">
+    <li className="flex items-start gap-2 px-1 text-[12px] leading-snug">
       <span className={`mt-[3px] shrink-0 ${tone}`} aria-hidden>
         {step.status === 'applied' ? '✓' : step.status === 'failed' ? '✕' : step.status === 'rejected' ? '–' : '·'}
       </span>
@@ -296,10 +296,14 @@ function HighlightBridge({ ids }: { ids: string[] }) {
 }
 
 function Spinner() {
+  // The track and the arc are data-URI-free but inline colours: an SVG
+  // presentation attribute cannot read a Tailwind token, so the new greys and
+  // the teal accent are written out here. These are the inkFaint, lineStrong
+  // and accent values from the theme.
   return (
-    <svg width="11" height="11" viewBox="0 0 12 12" className="animate-spin" aria-hidden>
-      <circle cx="6" cy="6" r="4.5" fill="none" stroke="#e7e5e1" strokeWidth="2" />
-      <path d="M6 1.5a4.5 4.5 0 014.5 4.5" fill="none" stroke="#b4622d" strokeWidth="2" strokeLinecap="round" />
+    <svg width="12" height="12" viewBox="0 0 12 12" className="animate-spin" aria-hidden>
+      <circle cx="6" cy="6" r="4.5" fill="none" stroke="#CBD3DD" strokeWidth="2" />
+      <path d="M6 1.5a4.5 4.5 0 014.5 4.5" fill="none" stroke="#0D9488" strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
 }

@@ -1,15 +1,15 @@
-# Argon
+# Furnish
 
 **AI Home Design Studio.** Describe a plot and what you need; get a real,
 editable 2D floor plan; walk the building in 3D; check it against geometric
 constraints; and let a language model propose changes that are validated and
 applied through the same code the mouse uses.
 
-Argon is not a viewer. Every room, wall, opening and piece of furniture is
+Furnish is not a viewer. Every room, wall, opening and piece of furniture is
 project data, editable by hand or by the assistant, in one canonical model
 that both the 2D plan and the 3D building are derived from.
 
-> **Scope.** Argon produces early-design geometry. Generated plans are **not**
+> **Scope.** Furnish produces early-design geometry. Generated plans are **not**
 > construction-ready and are not professionally certified. Constraint
 > thresholds are configurable sanity bounds, **not** rules from any
 > jurisdiction — the app does not know where you are and does not pretend to.
@@ -26,6 +26,24 @@ npm install
 cp .env.example .env      # optional — the studio works with no API key
 npm run dev               # http://127.0.0.1:5173
 ```
+
+Three routes. **`/`** is the landing page, **`/projects`** is the dashboard of
+everything saved in this browser, and **`/studio`** is the editor. All three are
+served by the same build — Vite's SPA fallback in dev, `app.get('*')` in
+`server/main.ts` — so a direct visit or a refresh to any of them works. There is
+no router dependency: `src/router.ts` is a path string, a `pushState` and a
+`popstate` listener — and because `pushState` fires no event of its own, it
+dispatches the event itself after every navigation, or the URL and the page
+would disagree.
+
+"Open the studio" goes to `/projects`, not to the editor. Someone arriving from
+a link has a project they have never seen, not one in mind, and `/studio` opens
+by restoring whatever was last open. From the dashboard you open a specific
+project or press **New project**, which is a blank plot plus the brief wizard.
+
+The landing page's hero plan is generated in the browser from the shared
+`src/model/sample.ts` brief — the same plan the studio's **Load the sample
+plan** button opens — so it cannot drift from the product.
 
 Without a key the studio is fully usable for manual editing; only the assistant
 is disabled, and the UI says so rather than failing silently.
@@ -56,7 +74,7 @@ browser code**. It is not in the bundle, not in any client request, and not in
 this repository. `.env` is gitignored; `.env.example` contains placeholders
 only.
 
-To run the studio with no AI at all, set `ARGON_DISABLE_AI=true`.
+To run the studio with no AI at all, set `FURNISH_DISABLE_AI=true`.
 
 > **Honest status of the integration.** The live service **has** now been
 > exercised end to end against a real key: text, tool calls, and full
@@ -80,29 +98,31 @@ That runs, in order:
 | Step | Command | Result |
 |---|---|---|
 | Type check | `npm run typecheck` | clean |
-| Unit tests | `npm test` | **508 passed**, 14 files |
-| Production build | `npm run build` | 1,304 kB, 374 kB gzip |
-| End-to-end | `npm run e2e` | **29 passed** |
+| Unit tests | `npm test` | **689 passed**, 19 files |
+| Production build | `npm run build` | 1,372 kB, 397 kB gzip |
+| End-to-end | `npm run e2e` | **65 passed** |
 
 `npm run e2e` drives a real Chromium against the real built bundle: it reads the
 DOM, hashes rendered pixels, and opens the files the browser downloaded. Run it
 headed with `npm run e2e:headed`.
 
-The twenty-nine are the twelve-step demonstration, `e2e/pointer-lock.spec.ts`
-(a regression test for an unhandled rejection that came from a third-party
-control and only appeared in roughly one run in three),
-`e2e/inside.spec.ts` — two tests for the inside camera: the view must open in a
-named room, move to another when a room is chosen, and leave on Escape; and a
-drag to look around must not be delivered to the room underneath as a click —
-`e2e/editor.spec.ts` — ten tests for the editing gestures themselves: picking a
-wall that sits inside two rooms and deleting it, a door showing as selected,
-the right-click menu addressing the wall under the cursor, a room type placed
-from the palette and then picked up again rather than duplicated, the upright
-label in a corridor, and the empty-plot and grid starts — and
-`e2e/assistant.spec.ts`, which drives the assistant through the browser and
-the server to a scripted endpoint: a design request answered in words must say
-on screen that the plan did not change, and a six-room plan must be *watched*
-arriving on the canvas one room at a time.
+The sixty-five are:
+
+| Spec | What it covers |
+|---|---|
+| `demo.spec.ts` (14) | the twelve-step demonstration, end to end |
+| `editor.spec.ts` (10) | the editing gestures: picking a wall that sits inside two rooms and deleting it, a door showing as selected, the right-click menu addressing the wall under the cursor, a room placed from the palette and picked up again rather than duplicated, the upright label in a corridor, the empty-plot and grid starts |
+| `routes.spec.ts` (8) | the three routes: the landing page, the plan in its hero drawn by the product's own code, no third-party requests at all, the back button, a direct visit to `/studio` and a refresh |
+| `walkFeel.spec.ts` (7) | walking: the editor shortcuts standing aside while a camera drives, `Q` and `E` turning on the spot, and typing in the assistant not walking the viewer through their own house |
+| `roomProgram.spec.ts` (6) | the model choosing the rooms, the doors it asked for being real doors, and the app saying a model planned it |
+| `fallback.spec.ts` (4) | what happens when the model cannot be reached: the Checks panel keeps saying so, and the plan stays valid |
+| `newProject.spec.ts` (4) | *File → New project* asking for a brief rather than leaving the previous plot on screen |
+| `assistant.spec.ts` (3) | the assistant through the browser and the server to a scripted endpoint: a design request answered in words must say on screen that the plan did not change, and a six-room plan must be *watched* arriving on the canvas one room at a time |
+| `screens.spec.ts` (3) | each of the three screens rendering at all, and the browser throwing nothing |
+| `inside.spec.ts` (2) | the inside camera: the view opens in a named room, moves to another when a room is chosen, and leaves on Escape; and a drag to look around is not delivered to the room underneath as a click |
+| `walkHud.spec.ts` (2) | the walk-through overlay: pointer lock genuinely held, and walking into a wall not unmounting the canvas |
+| `doorSwing.spec.ts` (1) | a door's leaf swinging the right way |
+| `pointer-lock.spec.ts` (1) | a regression test for an unhandled rejection that came from a third-party control and only appeared in roughly one run in three |
 
 ---
 
@@ -114,13 +134,14 @@ so the script below and the automated check are the same thing.
 **1 · Open the app.** You land on one screen that asks what you want, because a
 project with nothing in it should ask rather than show an empty grid. Plot size,
 storeys and the rooms you need are all on that screen, with a sensible default
-already filled in; units, street edge, setbacks, room sizes, style, budget and
-comfort are under **More options**. There is no Next, no Back and no review step —
-a plan should not cost a questionnaire to ask for.
+already filled in. There is no Next, no Back and no review step — a plan should
+not cost a questionnaire to ask for. Everything else the brief can say —
+street edge, setbacks, room sizes, style, budget, comfort — takes the defaults,
+and the plan you get says so in the Checks panel.
 
-**2 · Describe the home.** Plot 18 × 14 m, two storeys, one living room and one
-bedroom, step-free access (that last one is under **More options**). Everything
-here feeds the generator as a structured brief — not as a prompt.
+**2 · Describe the home.** Plot 18 × 14 m, two storeys, one living room and
+three bedrooms. Everything here feeds the generator as a structured brief — not
+as a prompt.
 
 **3 · Generate.** Press Generate. A real plan appears: rooms, walls, openings,
 doors and starting furniture, all as project data. The status strip shows net
@@ -147,8 +168,10 @@ area in the inspector. Net indoor area has gone up by the room's area.
 living room, or whatever room you select in the plan or from the row of chips
 along the bottom — standing in a corner and looking across at the opposite one.
 Drag to look; W A S D walks; scroll steps forward; Q and E turn; Escape leaves.
-Walls and furniture stop you. Click **walk** instead and you get the
-pointer-locked walk on the pavement, which is unchanged.
+Walls and furniture stop you, and so does a hole: the camera works out what is
+underfoot from the slab and tread geometry each frame, so on a two-storey plan
+you can walk up the staircase and stand on the first floor. Click **walk** instead
+and you get the pointer-locked walk on the pavement, which is unchanged.
 
 **9 · Run the checks.** Open the **Checks** tab. The assistant placed the study
 over another room, and the engine says so, names both rooms, and quantifies it:
@@ -194,7 +217,7 @@ Full detail in [ARCHITECTURE.md](ARCHITECTURE.md).
 - **The model never measures.** Areas and FAR come from formulas. The assistant
   can *request* a calculation; the number shown is recomputed afterwards from
   the store.
-- **A reply is not a change.** Argon draws the plan from operations, not from
+- **A reply is not a change.** Furnish draws the plan from operations, not from
   words. Asked to build something and handed a layout written in prose, the
   assistant is pressed once for the operations behind it; if it still runs
   nothing, the panel says so under the reply rather than letting a described
@@ -212,6 +235,9 @@ Full detail in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ```
 src/
+  router.ts   three routes (`/`, `/projects`, `/studio`) and a popstate listener
+  home/       the landing page, and the sample plan its hero renders
+  projects/   the dashboard of everything saved in this browser
   model/      canonical model, operations, geometry, measures, validation
   store/      the single operation dispatch table, history, persistence hooks
   tools/      the 28-tool registry — the assistant's security boundary
@@ -228,12 +254,15 @@ e2e/          the twelve-step demonstration, the pointer-lock regression, the
 scripts/      live-assistant-check.mjs — drives the real service once
 ```
 
+Every `e2e/*.spec.ts` navigates to **`/studio`**, not `/`. A `goto('/')` would
+now land on the landing page and fail on a missing testid.
+
 ## Documents
 
 | File | What it is |
 |---|---|
-| [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) | what Alza and ArchMorph do, and what Argon took from them |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | how Argon is built and why |
+| [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) | what Alza and ArchMorph do, and what Furnish took from them |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | how Furnish is built and why |
 | [FEATURE_MATRIX.md](FEATURE_MATRIX.md) | what is done, what is verified, and what is not |
 
 `_research/alza` and `_research/archmorph` are third-party checkouts made while

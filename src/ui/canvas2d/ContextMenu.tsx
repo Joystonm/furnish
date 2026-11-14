@@ -82,25 +82,28 @@ export function ContextMenu({ target, x, y, onClose, onFit }: {
   );
 
   // Keep the whole menu inside the canvas. A menu that runs off the right
-  // edge on a wide-but-short plan is a menu that loses its last item.
+  // edge on a wide-but-short plan is a menu that loses its last item. The
+  // vertical estimate is deliberately generous — over-estimating pulls the
+  // menu up a little, under-estimating loses the last item off the bottom.
   const style = {
     left: Math.max(4, Math.min(x, (hostRef.current?.clientWidth ?? 0) - 236)),
-    top: Math.max(4, Math.min(y, (hostRef.current?.clientHeight ?? 0) - (40 + items.length * 30))),
+    top: Math.max(4, Math.min(y, (hostRef.current?.clientHeight ?? 0) - (56 + items.length * 34))),
   };
 
   return (
     <div
       ref={hostRef}
-      className="slide-up absolute z-30 w-56 rounded border border-line bg-surface p-1 shadow-pop"
+      className="slide-up absolute z-30 w-56 rounded-card border border-line bg-surface/95 p-1.5 shadow-pop backdrop-blur-md"
       style={style}
       role="menu"
       data-testid="context-menu"
       aria-label={title}
     >
-      <div className="border-b border-line px-2 pb-1.5 pt-1">
-        <p className="truncate text-[12px] font-medium text-ink" data-testid="context-menu-title">{title}</p>
-        {detail && <p className="truncate text-[11px] text-inkFaint">{detail}</p>}
+      <div className="px-2 pb-2 pt-1.5">
+        <p className="truncate text-[13px] font-semibold text-ink" data-testid="context-menu-title">{title}</p>
+        {detail && <p className="mt-0.5 truncate text-[11px] text-inkFaint">{detail}</p>}
       </div>
+      <div className="section-rule mt-0" />
       {items.map((item, i) => (
         <div key={item.id}>
           {item.id.startsWith('-') ? (
@@ -116,10 +119,12 @@ export function ContextMenu({ target, x, y, onClose, onFit }: {
               }}
             >
               <span className="min-w-0 flex-1">
-                <span className="block text-[12px] font-medium">{item.label}</span>
-                {item.hint && <span className="block truncate text-[11px] text-inkFaint">{item.hint}</span>}
+                <span className="block text-[13px] font-medium">{item.label}</span>
+                {item.hint && <span className="mt-0.5 block truncate text-[11px] text-inkFaint">{item.hint}</span>}
               </span>
-              {i === 0 && item.id === 'delete' && <kbd className="text-[10px] text-inkFaint">Del</kbd>}
+              {i === 0 && item.id === 'delete' && (
+                <kbd className="rounded border border-line bg-raised px-1 py-0.5 font-mono text-[10px] text-inkFaint">Del</kbd>
+              )}
             </button>
           )}
         </div>

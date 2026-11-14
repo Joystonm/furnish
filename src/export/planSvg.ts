@@ -66,21 +66,21 @@ export function planToSvg(project: Project, floorId: string | undefined, options
 
   /* ── plot boundary and buildable envelope ── */
   body.push(
-    `<rect x="${mm(0)}" y="${mm(0)}" width="${mm(project.plot.width)}" height="${mm(project.plot.depth)}" fill="#f6f4f0" stroke="#c9c3b6" stroke-width="6"/>`,
-    `<rect x="${mm(sb.left)}" y="${mm(sb.front)}" width="${mm(project.plot.width - sb.left - sb.right)}" height="${mm(project.plot.depth - sb.front - sb.rear)}" fill="none" stroke="#a9a294" stroke-width="3" stroke-dasharray="40 16"/>`,
+    `<rect x="${mm(0)}" y="${mm(0)}" width="${mm(project.plot.width)}" height="${mm(project.plot.depth)}" fill="#eaeef3" stroke="#b6c1cd" stroke-width="6"/>`,
+    `<rect x="${mm(sb.left)}" y="${mm(sb.front)}" width="${mm(project.plot.width - sb.left - sb.right)}" height="${mm(project.plot.depth - sb.front - sb.rear)}" fill="none" stroke="#ccd5df" stroke-width="3" stroke-dasharray="40 16"/>`,
   );
 
   /* ── outdoor spaces and decks ── */
   for (const o2 of outdoor) {
     body.push(
-      `<rect x="${mm(o2.x - o2.width / 2)}" y="${mm(o2.y - o2.depth / 2)}" width="${mm(o2.width)}" height="${mm(o2.depth)}" fill="#eeeade" stroke="#9a9284" stroke-width="4"/>`,
+      `<rect x="${mm(o2.x - o2.width / 2)}" y="${mm(o2.y - o2.depth / 2)}" width="${mm(o2.width)}" height="${mm(o2.depth)}" fill="#e8f2ee" stroke="#a3b1c0" stroke-width="4"/>`,
     );
   }
 
   /* ── rooms ── */
   for (const r of rooms) {
     body.push(
-      `<rect x="${mm(r.x)}" y="${mm(r.y)}" width="${mm(r.width)}" height="${mm(r.depth)}" fill="#fbfaf7" stroke="#8d8577" stroke-width="3"/>`,
+      `<rect x="${mm(r.x)}" y="${mm(r.y)}" width="${mm(r.width)}" height="${mm(r.depth)}" fill="#fbfcfd" stroke="#94a3b8" stroke-width="3"/>`,
     );
     if (o.labels) {
       const cx = (r.x + r.width / 2) * 1000;
@@ -92,8 +92,8 @@ export function planToSvg(project: Project, floorId: string | undefined, options
       const rot = upright ? ` transform="rotate(-90 ${cx.toFixed(1)} ${cy.toFixed(1)})"` : '';
       body.push(
         `<g${rot}>` +
-          `<text x="${cx.toFixed(1)}" y="${(cy - 60).toFixed(1)}" text-anchor="middle" font-family="Inter,Helvetica,Arial,sans-serif" font-size="90" fill="#3f3a33">${esc(r.label)}</text>` +
-          `<text x="${cx.toFixed(1)}" y="${(cy + 70).toFixed(1)}" text-anchor="middle" font-family="Inter,Helvetica,Arial,sans-serif" font-size="76" fill="#8d8577">${(r.width * r.depth).toFixed(1)} m²</text>` +
+          `<text x="${cx.toFixed(1)}" y="${(cy - 60).toFixed(1)}" text-anchor="middle" font-family="Inter,Helvetica,Arial,sans-serif" font-size="90" fill="#334155">${esc(r.label)}</text>` +
+          `<text x="${cx.toFixed(1)}" y="${(cy + 70).toFixed(1)}" text-anchor="middle" font-family="Inter,Helvetica,Arial,sans-serif" font-size="76" fill="#94a3b8">${(r.width * r.depth).toFixed(1)} m²</text>` +
         `</g>`,
       );
     }
@@ -111,12 +111,12 @@ export function planToSvg(project: Project, floorId: string | undefined, options
     for (let i = 0; i < s.riserCount; i++) {
       const y0 = top + i * going;
       body.push(
-        `<line x1="${mm(s.x - s.width / 2)}" y1="${mm(y0)}" x2="${mm(s.x + s.width / 2)}" y2="${mm(y0)}" stroke="#8d8577" stroke-width="3"/>`,
+        `<line x1="${mm(s.x - s.width / 2)}" y1="${mm(y0)}" x2="${mm(s.x + s.width / 2)}" y2="${mm(y0)}" stroke="#94a3b8" stroke-width="3"/>`,
       );
     }
     body.push(
-      `<rect x="${mm(s.x - s.width / 2)}" y="${mm(top)}" width="${mm(s.width)}" height="${mm(s.run)}" fill="none" stroke="#8d8577" stroke-width="4"/>`,
-      `<line x1="${mm(s.x - s.width / 2)}" y1="${mm(top)}" x2="${mm(s.x + s.width / 2)}" y2="${mm(top)}" stroke="#b4622d" stroke-width="7"/>`,
+      `<rect x="${mm(s.x - s.width / 2)}" y="${mm(top)}" width="${mm(s.width)}" height="${mm(s.run)}" fill="none" stroke="#94a3b8" stroke-width="4"/>`,
+      `<line x1="${mm(s.x - s.width / 2)}" y1="${mm(top)}" x2="${mm(s.x + s.width / 2)}" y2="${mm(top)}" stroke="#0d9488" stroke-width="7"/>`,
     );
   }
 
@@ -127,7 +127,7 @@ export function planToSvg(project: Project, floorId: string | undefined, options
       const w = (quarter ? f.depth : f.width) * 1000;
       const d = (quarter ? f.width : f.depth) * 1000;
       body.push(
-        `<rect x="${(f.x * 1000 - w / 2).toFixed(2)}" y="${(f.y * 1000 - d / 2).toFixed(2)}" width="${w.toFixed(2)}" height="${d.toFixed(2)}" transform="rotate(${(-f.rotation).toFixed(2)} ${mm(f.x)} ${mm(f.y)})" fill="#e7e2d6" stroke="#a9a294" stroke-width="2"/>`,
+        `<rect x="${(f.x * 1000 - w / 2).toFixed(2)}" y="${(f.y * 1000 - d / 2).toFixed(2)}" width="${w.toFixed(2)}" height="${d.toFixed(2)}" transform="rotate(${(-f.rotation).toFixed(2)} ${mm(f.x)} ${mm(f.y)})" fill="#d3dbe4" stroke="#ccd5df" stroke-width="2"/>`,
       );
     }
   }
@@ -138,9 +138,9 @@ export function planToSvg(project: Project, floorId: string | undefined, options
   /* ── title block ── */
   const caption = `${project.name} — ${floor.name}`;
   body.push(
-    `<text x="${mm(sb.left)}" y="${(-620).toFixed(0)}" font-family="Inter,Helvetica,Arial,sans-serif" font-size="150" font-weight="600" fill="#1c1b19">${esc(caption)}</text>`,
-    `<text x="${mm(project.plot.width - sb.right)}" y="${(-620).toFixed(0)}" text-anchor="end" font-family="Inter,Helvetica,Arial,sans-serif" font-size="105" fill="#8a8580">${formatLength(project.plot.width, 'm', 2)} × ${formatLength(project.plot.depth, 'm', 2)} plot · ${rooms.length} rooms</text>`,
-    `<text x="${mm(sb.left)}" y="${(project.plot.depth * 1000 + 520).toFixed(0)}" font-family="Inter,Helvetica,Arial,sans-serif" font-size="88" fill="#8a8580">Argon — concept stage. Not a construction drawing and not a compliance certificate.</text>`,
+    `<text x="${mm(sb.left)}" y="${(-620).toFixed(0)}" font-family="Inter,Helvetica,Arial,sans-serif" font-size="150" font-weight="600" fill="#0f172a">${esc(caption)}</text>`,
+    `<text x="${mm(project.plot.width - sb.right)}" y="${(-620).toFixed(0)}" text-anchor="end" font-family="Inter,Helvetica,Arial,sans-serif" font-size="105" fill="#94a3b8">${formatLength(project.plot.width, 'm', 2)} × ${formatLength(project.plot.depth, 'm', 2)} plot · ${rooms.length} rooms</text>`,
+    `<text x="${mm(sb.left)}" y="${(project.plot.depth * 1000 + 520).toFixed(0)}" font-family="Inter,Helvetica,Arial,sans-serif" font-size="88" fill="#94a3b8">Furnish — concept stage. Not a construction drawing and not a compliance certificate.</text>`,
   );
 
   void ctx;
@@ -149,7 +149,7 @@ export function planToSvg(project: Project, floorId: string | undefined, options
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="${width + margin * 2}mm" height="${depth + margin * 2}mm" viewBox="${-margin} ${-margin} ${width + margin * 2} ${depth + margin * 2}">`,
     `<title>${esc(caption)}</title>`,
-    `<desc>Generated by Argon from its canonical project model. Units: millimetres. Origin at the plot's north-west corner, y increasing south.</desc>`,
+    `<desc>Generated by Furnish from its canonical project model. Units: millimetres. Origin at the plot's north-west corner, y increasing south.</desc>`,
     `<rect x="${-margin}" y="${-margin}" width="${width + margin * 2}" height="${depth + margin * 2}" fill="#ffffff"/>`,
     `<g transform="translate(${margin} ${margin})">`,
     ...body,
@@ -178,7 +178,7 @@ function wallToPath(w: Wall): string {
   // pre-multiplying here would scale the offset twice and draw every wall
   // a thousand times too thick.
   const h = w.thickness / 2;
-  const fill = w.type === 'exterior' ? '#3f3a33' : w.type === 'parapet' || w.type === 'railing' ? '#9a9284' : '#5c554b';
+  const fill = w.type === 'exterior' ? '#334155' : w.type === 'parapet' || w.type === 'railing' ? '#94a3b8' : '#475569';
 
   const at = (s: number, side: number): string =>
     `${((w.a.x + ux * s + px * side) * 1000).toFixed(2)} ${((w.a.y + uy * s + py * side) * 1000).toFixed(2)}`;
@@ -220,11 +220,11 @@ function dimLine(x1: number, y1: number, x2: number, y2: number, caption: string
   const anchor = horizontal ? 'middle' : 'end';
 
   return (
-    `<g stroke="#8a8580" stroke-width="3" fill="none">` +
+    `<g stroke="#94a3b8" stroke-width="3" fill="none">` +
     `<line x1="${X1}" y1="${Y1}" x2="${X2}" y2="${Y2}"/>` +
     ticks +
     `</g>` +
-    `<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" text-anchor="${anchor}" font-family="Inter,Helvetica,Arial,sans-serif" font-size="80" fill="#57534e">${esc(caption)}</text>`
+    `<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" text-anchor="${anchor}" font-family="Inter,Helvetica,Arial,sans-serif" font-size="80" fill="#475569">${esc(caption)}</text>`
   );
 }
 

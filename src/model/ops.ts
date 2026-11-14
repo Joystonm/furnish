@@ -19,6 +19,7 @@
  *     any of those systems knowing a room moved.
  */
 import { newId } from './ids.ts';
+import { DESIGN_STYLES, isDesignStyle, paletteFor } from './palette.ts';
 import {
   CATALOG,
   DEFAULT_MATERIALS,
@@ -422,7 +423,22 @@ export interface ResizeRoomInput {
   y?: number;
   width?: number;
   depth?: number;
-  /** Which corner/edge is fixed while resizing. Defaults to the top-left. */
+  /**
+   * Which corner/edge is fixed while resizing. Defaults to `bottom-right`.
+   *
+   * This used to be documented as `top-left` and coded as `bottom-right`; the
+   * documentation was the half that was wrong, and it was the half the model
+   * reads (see the `resize_room` tool description in `src/tools/registry.ts`),
+   * so a model that believed the comment was told a room would grow into the
+   * corner the code actually kept fixed.
+   *
+   * The default itself is deliberate for now, and is documented as a wart in
+   * FEATURE_MATRIX.md: a room widened from the inspector grows leftwards and
+   * upwards, which on a tight plan means it grows into the side and front
+   * setbacks rather than into the space it has. `top-left` is the better
+   * default, but changing it while the walls and doors do not follow the
+   * rooms would trade one wrong answer for another.
+   */
   anchor?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
 }
 
@@ -1093,6 +1109,82 @@ export function applyMaterial(
       return done(reindex({ ...project, rooms }), project);
     }
   }
+}
+
+/**
+ * Apply a whole named palette to the project in one edit.
+ *
+ * One operation rather than four, and that is not a convenience. Four separate
+ * `applyMaterial` calls would be four history entries — so one Ctrl-Z would
+ * pull back the floors and leave the walls in the new style, which is a worse
+ * state than either — and four lines in the activity log describing a change
+ * the user made once. Here the palette lands whole or not at all.
+ *
+ * The style is resolved against `palette.ts`, which only ever names materials
+ * that exist in the catalogue. An unrecognised style is refused outright: there
+ * is no fallback palette, because a fallback would let the assistant report a
+ * style it did not apply.
+ *
+ * What it returns is a count of what it actually rewrote, counted before the
+ * rewrite, so the caller can describe the change without having to guess.
+ */
+export function applyStyle(
+  project: Project,
+  style: string,
+): OpResult<{ style: string; exteriorWalls: number; interiorWalls: number; floors: Record<string, number> }> {
+  const palette = paletteFor(style);
+  if (!palette || !isDesignStyle(style)) {
+    return fail(
+      'invalid_input',
+      `"${style}" is not one of the available styles.`,
+      `Choose one of: ${DESIGN_STYLES.join(', ')}.`,
+    );
+  }
+
+  let exteriorWalls = 0;
+  let interiorWalls = 0;
+  const floors: Record<string, number> = {};
+
+  const walls = project.walls.map((w) => {
+    // Boundary walls and railings are site and safety, not finishes. A palette
+    // has no business recolouring the neighbour's fence or a balustrade.
+    if (w.type === 'boundary' || w.type === 'railing') return w;
+    const want = w.type === 'exterior' ? palette.exterior : palette.interior;
+    if (w.material === want) return w;
+    if (w.type === 'exterior') exteriorWalls++;
+    else interiorWalls++;
+    return { ...w, material: want };
+  });
+
+  const rooms = project.rooms.map((r) => {
+    const want = palette.floorsByKind[r.kind] ?? 'floor.stone';
+    if (r.floorMaterial === want) return r;
+    floors[want] = (floors[want] ?? 0) + 1;
+    return { ...r, floorMaterial: want };
+  });
+
+  // The brief records which style was chosen, so the wizard, the inspector, the
+  // toolbar and the generator all read the same answer the palette applied.
+  // This is the field that had been declared in the type and read by nothing.
+  //
+  // A brief is created if there isn't one. A project drawn by hand has none —
+  // `blankProject` sets it null — and dropping the style on the floor in that
+  // case would mean the toolbar could never mark a palette as current on
+  // exactly the projects that most needed one. Every field the brief requires
+  // gets a neutral default; nothing here is a design decision except `style`.
+  const brief: DesignBrief = project.brief
+    ? { ...project.brief, style }
+    : {
+        plot: project.plot,
+        floorCount: project.floors.length,
+        rooms: [],
+        preferredAreas: {},
+        style,
+        preferences: { accessibility: false, ventilation: false, daylight: false, privacy: false },
+      };
+
+  const next = reindex({ ...project, walls, rooms, brief });
+  return done(next, { style, exteriorWalls, interiorWalls, floors });
 }
 
 export function defineMaterial(
