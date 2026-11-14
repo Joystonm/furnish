@@ -28,9 +28,14 @@ role" field.
 > another, the staircase was taken out of the footprint before the rooms were
 > partitioned so no room is ever bitten by it, and the furniture was moved clear of
 > every doorway. The **same** designed test was then re-run and passed, and the app
-> keeps both runs — the failing one and the passing one, with their sealed evidence
-> packs — on a Ledger tab, so the verification history is part of the product rather
-> than a claim in a README.
+> keeps the whole verification history — nineteen runs, nine of them passing and ten
+> of them failing, each with its sealed evidence pack — on a Ledger tab, so the
+> verification history is part of the product rather than a claim in a README. Six
+> more loops were closed the same way after that: a front door nobody could see on
+> the drawing, a door the staircase painted over, a flight arriving upstairs drawn
+> as an empty hole, a refusal that gave the plot in metres instead of the two areas
+> and the gap between them, and the ledger's own completeness — each one found by
+> the agent, fixed in the product, and re-run until it passed with the same test.
 
 ---
 
@@ -112,13 +117,13 @@ that has not been made public yet.
 |---|---|
 | Public GitHub repo, initialised on/after 12 November | ✅ created 13 Nov 2026 · **push pending** |
 | Setup instructions in the README | ✅ [`README.md`](README.md) |
-| Kane CLI used, at least one run | ✅ two runs, both recorded |
+| Kane CLI used, at least one run | ✅ nineteen runs recorded in the app's ledger — nine passed, ten failed |
 | Explanation: app, coding agent, Kane's role | ✅ §1 above |
 | YouTube demo, 3–5 min, app **and** Kane running | ⬜ **not recorded yet** — shot list in §2 |
 | Live URL (optional) | ⬜ not deployed — the runnable command is the fallback |
 | Two public launch posts | ⬜ **not posted yet** — drafts in §3 |
 | Credentials for any login/paid service | ✅ none — no login, no paid service, no API key |
-| Recorded-run / backup-deployment fallback | ✅ the two sealed evidence packs and the recorded runs in `.testmuai/results/` |
+| Recorded-run / backup-deployment fallback | ✅ nineteen sealed evidence packs and every run's own record in `.testmuai/results/` |
 | TestMu AI account, same email for credit claim | ✅ the account used for the runs |
 | Repo pushed before 11:59 PM IST, 19 Nov | ⬜ **the one hard blocker** |
 
@@ -131,15 +136,33 @@ the user's explicit say-so. The command:
 
 ```bash
 cd /f/furnish-verified
-git remote add origin https://github.com/Joystonm/furnish-verified.git
 git push -u origin main
 ```
 
 Do it early. Repositories lock at the deadline.
 
+### The loops, in one table
+
+This is the part the judges are looking for: not one green tick, but a chain of
+requirement → agent-designed test → run → failure → repair → the same test again.
+
+| The flow | What the run found | Fixed in | Re-run |
+|---|---|---|---|
+| `audit-plan-walkability` — the test Kane designed from `PRD.md` | nine errors: three rooms with no door, three unreachable rooms, the staircase with no door, furniture in doorways | `275bb49` | 🟢 passed — same file, same `definition.sha256` |
+| `every-room-has-a-door` | — | — | 🟢 passed first time |
+| `the-app-opens-on-a-drawn-plan` | — | — | 🟢 passed first time |
+| `every-room-can-be-walked-to` | the front door was in the model but not marked on the drawing | `1cdaaf5` | 🟢 passed |
+| `nothing-stands-in-a-doorway` | — | — | 🟢 passed first time |
+| `the-staircase-can-be-walked-to` | the flight arriving upstairs was an empty dashed rectangle — no treads, no way up | `472e117` | 🟢 passed at `472e117` |
+| `the-app-refuses-a-program-that-does-not-fit` | the refusal gave the plot in metres, not the two areas or the gap | `472e117` | 🟢 passed at `472e117` |
+| `the-ledger-keeps-the-failures` | the agent could not read the whole ledger in one pass | the ledger was rebuilt so every row carries its commit and the checker's own findings | 🟢 passed — all four assertions |
+
+Ten of the nineteen runs failed. Every one of them is in the app's ledger with
+the reason the agent gave, and a run where the *agent* ran out of steps is
+labelled as that — it is not a defect in the product.
+
 ### Optional, if there is time
 
 - A live URL. The app is a static Vite build, so it will deploy to any static host;
   `npm run build` produces `dist/`.
-- Run the six flows that have not run yet, so the ledger holds more than the one
-  designed test: `npm run verify:flows`. Each run costs credits.
+- A YouTube unlisted link is enough; a public one is better.

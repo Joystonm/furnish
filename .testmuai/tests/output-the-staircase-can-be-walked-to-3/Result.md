@@ -1,0 +1,23 @@
+---
+test: ../the-staircase-can-be-walked-to-3_test.md
+status: passed
+started: 2026-11-14T09:05:32.716Z
+duration_s: 138.5
+session_id: 442f0791-a3bf-4c2a-bb33-e31b9d633493
+---
+
+# Session: the-staircase-can-be-walked-to — Result
+
+## Step 1 ✓ passed (138.5s)
+md5: 3a61cc8be2766d7e3769c8e4fad8d73a
+Open the home-design studio at http://localhost:5199.
+
+The flight of stairs must have a door leading into it, and the foot of it must be walkable to from the front door. Do exactly this:
+
+1. Click the Ground floor tab.
+2. Find the staircase in the drawing: a flight of parallel tread lines with an arrow showing the way it rises.
+3. Assert that a door is drawn into the staircase, that is, an opening in a wall of the stair well with a swing arc.
+4. Read the findings panel on the right and record any finding about the staircase, in particular one that says the staircase has no door or cannot be walked to.
+5. Click the Floor 2 tab and confirm the staircase is drawn there too, as the flight arriving at that level.
+
+Report whether the staircase has a door into it, what the findings panel says about it, and whether it is drawn on both storeys. Finish with a plain statement of whether the stair is usable.

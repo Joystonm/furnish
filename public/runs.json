@@ -1,6 +1,383 @@
 {
   "runs": [
     {
+      "id": "2026-11-14-the-staircase-can-be-walked-to-run5-472e117",
+      "name": "the-staircase-can-be-walked-to",
+      "title": "The staircase can be walked to",
+      "session": "1359e1bc-bae3-43fd-8559-f64368891156",
+      "startedAt": "2026-11-14T09:57:42.827Z",
+      "status": "passed",
+      "durationS": 129.2,
+      "credits": 52.1029065,
+      "commit": "472e117",
+      "summary": "Reviewed the Ground floor plan and identified the staircase, including a door opening into the stairwell.\nRead the findings panel, which reported: “Nothing found — Every room has a door, every door can be reached, and nothing is standing in a doorway.”\nSwitched to the Floor 2 plan and confirmed that the staircase is also drawn there as the arriving flight.\nThe staircase has a door into it, appears on both storeys, and is usable.",
+      "tests": [
+        {
+          "name": "Step 1",
+          "status": "passed",
+          "detail": "reviewed the staircase access on the floor-plan page"
+        }
+      ],
+      "appFindings": {
+        "errors": 0,
+        "warnings": 0,
+        "notes": 0,
+        "reachable": 11,
+        "total": 11,
+        "issues": []
+      },
+      "evidence": ".testmuai/evidence/232e3a3c-f662-433e-a9fb-d65500054b73.evidence",
+      "source": "kane-cli run"
+    },
+    {
+      "id": "2026-11-14-the-ledger-keeps-the-failures-run2-472e117",
+      "name": "the-ledger-keeps-the-failures",
+      "title": "The ledger keeps the failures",
+      "session": "c679441e-45f7-4f27-aff9-201dfe3b1b2f",
+      "startedAt": "2026-11-14T09:54:31.723Z",
+      "status": "passed",
+      "durationS": 85.3,
+      "credits": 18.5172325,
+      "commit": "472e117",
+      "summary": "Reviewed the verification ledger from newest to oldest, covering 16 runs: 7 passed and 9 failed.\nThe runs were: The ledger keeps the failures (failed); The app refuses a program that does not fit (passed, then four failed runs); The staircase can be walked to (passed, then two failed runs); Nothing stands in a doorway (passed); Every room can be walked to (passed, then failed); Every room has a door (passed); The app opens on a drawn plan (passed); audit-plan-walkability (passed, then failed).\nEach listed run showed its status, the commit it was checked against, the app’s own checker findings, and its individual flow results; failed runs remained visibly marked as failed.\nAssertion results: passed—plot-size validation and plan regeneration; staircase review; doorway-blocking-furniture review; room-access review; floor-plan findings and status review; drawn-plan review; and one audit-plan-walkability room-access review.\nAssertion results: failed—the ledger review was not shown as complete; four plot-size checks stopped early or lacked required area details; two staircase checks found the upper-floor arrival missing or incorrectly treated the stairwell door as absent; one room-access check stopped before reporting; and the failed audit identified inaccessible Bedroom 3, Bathroom 2, Bedroom 1, Bedroom 2, Bathroom 1, an unusable and undersized hall, no staircase door, furniture blocking doorways (sofa, counter, and bed), and a missing required drawing detail. Overall, 7 of 27 recorded assertions passed and 20 failed.",
+      "tests": [
+        {
+          "name": "Step 1",
+          "status": "passed",
+          "detail": "reviewed the verification ledger on localhost"
+        }
+      ],
+      "appFindings": {
+        "errors": 0,
+        "warnings": 0,
+        "notes": 0,
+        "reachable": 11,
+        "total": 11,
+        "issues": []
+      },
+      "evidence": ".testmuai/evidence/d778aa04-75f1-421c-8084-2827862ed5b2.evidence",
+      "source": "kane-cli run"
+    },
+    {
+      "id": "2026-11-14-the-staircase-can-be-walked-to-run4-472e117",
+      "name": "the-staircase-can-be-walked-to",
+      "title": "The staircase can be walked to",
+      "session": "a116aa5f-9f00-4041-ba9e-9845b23d444c",
+      "startedAt": "2026-11-14T09:49:55.231Z",
+      "status": "failed",
+      "durationS": 239.9,
+      "credits": 90.66529949999999,
+      "commit": "472e117",
+      "summary": "The plan was healthy: the Ground floor view showed a door into the stairwell and a route from the front door, the findings panel showed no problems, and the Floor 2 view showed the stair. The agent nevertheless treated comparison of the two storey views as something that had to happen at the same time, rather than using the observations it had already collected.\nAfter checking each floor, record the observations separately and finish: the stair has a door, the findings panel says “Nothing found,” it appears on both storeys, and it is usable.",
+      "tests": [
+        {
+          "name": "Step 1",
+          "status": "failed",
+          "detail": "The agent completed the required drawing and findings checks, then waited instead of recording its results and finishing the report."
+        }
+      ],
+      "appFindings": {
+        "errors": 0,
+        "warnings": 0,
+        "notes": 0,
+        "reachable": 11,
+        "total": 11,
+        "issues": []
+      },
+      "evidence": ".testmuai/evidence/709c20b5-0edc-4381-b9c5-a5339210a1c5.evidence",
+      "source": "kane-cli run"
+    },
+    {
+      "id": "2026-11-14-the-ledger-keeps-the-failures-run1-472e117",
+      "name": "the-ledger-keeps-the-failures",
+      "title": "The ledger keeps the failures",
+      "session": "537b02dd-4132-40d2-a7c0-eed59d6c14f8",
+      "startedAt": "2026-11-14T09:38:23.546Z",
+      "status": "failed",
+      "durationS": 91.9,
+      "credits": 21.192320000000002,
+      "commit": "472e117",
+      "summary": "The agent opened the Ledger but did not complete a run-by-run review from newest to oldest before making the assertion. The visible ledger was scrollable and only part of the list was examined, so the test could not establish that every entry included both a commit and the app's findings.\nUpdate the automation to scroll through the entire Ledger, expand or read each run as needed, record its status, commit, checker report, and individual flow outcomes, and only then evaluate the completeness assertions.",
+      "tests": [
+        {
+          "name": "Step 1",
+          "status": "failed",
+          "detail": "The automation stopped at the completeness check without showing that it had reviewed every ledger entry and its required details."
+        }
+      ],
+      "appFindings": {
+        "errors": 0,
+        "warnings": 0,
+        "notes": 0,
+        "reachable": 11,
+        "total": 11,
+        "issues": []
+      },
+      "evidence": ".testmuai/evidence/2fb48af0-3f16-416e-ab93-96d1cde0d296.evidence",
+      "source": "kane-cli run"
+    },
+    {
+      "id": "2026-11-14-the-app-refuses-a-program-that-does-not-fit-run5-472e117",
+      "name": "the-app-refuses-a-program-that-does-not-fit",
+      "title": "The app refuses a program that does not fit",
+      "session": "c5d08e2d-6ff4-41c7-996f-f4b98012f321",
+      "startedAt": "2026-11-14T09:35:29.775Z",
+      "status": "passed",
+      "durationS": 138.8,
+      "credits": 43.83759250000001,
+      "commit": "472e117",
+      "summary": "Read the plot dimensions in the brief panel, then changed the plot to 6 by 5 and generated a plan.\nThe app correctly refused the undersized plot, showing “The program does not fit the plot” and stating “105.0 m² requested; 12.0 m² held”; no oversized room drawing remained visible.\nRestored the plot dimensions to 18 by 14 and generated the plan again.\nA drawing returned for the restored plot, with the displayed review stating: “Nothing found. Every room has a door, every door can be reached, and nothing is standing in a doorway.”",
+      "tests": [
+        {
+          "name": "Step 1",
+          "status": "passed",
+          "detail": "tested plot-size validation and regenerated the plan on the plot planner"
+        }
+      ],
+      "appFindings": {
+        "errors": 0,
+        "warnings": 0,
+        "notes": 0,
+        "reachable": 11,
+        "total": 11,
+        "issues": []
+      },
+      "evidence": ".testmuai/evidence/a3525048-ad3d-4039-ad9a-d74371620f45.evidence",
+      "source": "kane-cli run"
+    },
+    {
+      "id": "2026-11-14-the-app-refuses-a-program-that-does-not-fit-run4-472e117",
+      "name": "the-app-refuses-a-program-that-does-not-fit",
+      "title": "The app refuses a program that does not fit",
+      "session": "c6512125-36f6-4c93-a45f-688b81df3eb3",
+      "startedAt": "2026-11-14T09:32:54.225Z",
+      "status": "failed",
+      "durationS": 70.9,
+      "credits": 25.19788,
+      "commit": "472e117",
+      "summary": "The agent only opened and reviewed the page. It did not enter 6 by 5, generate a plan, check the refusal, save its wording, or restore the plot size.\nReplay the scenario from the current page: set width to 6 and depth to 5, click Generate the plan, record the refusal text and areas, confirm the drawing is cleared, then restore 18 by 14 and confirm a drawing returns.",
+      "tests": [
+        {
+          "name": "Step 1",
+          "status": "failed",
+          "detail": "The run stopped before changing the plot dimensions or testing the refusal message."
+        }
+      ],
+      "appFindings": {
+        "errors": 0,
+        "warnings": 0,
+        "notes": 0,
+        "reachable": 11,
+        "total": 11,
+        "issues": []
+      },
+      "evidence": ".testmuai/evidence/c3bc9955-b4a0-4cff-ad82-b82c0c653615.evidence",
+      "source": "kane-cli run"
+    },
+    {
+      "id": "2026-11-14-the-app-refuses-a-program-that-does-not-fit-run3-472e117",
+      "name": "the-app-refuses-a-program-that-does-not-fit",
+      "title": "The app refuses a program that does not fit",
+      "session": "4fb3e306-1242-4c01-989b-1a035b02fea6",
+      "startedAt": "2026-11-14T09:28:57.627Z",
+      "status": "failed",
+      "durationS": 113.4,
+      "credits": 36.276855,
+      "commit": "472e117",
+      "summary": "The agent became stuck after extracting the refusal details and repeatedly waited instead of completing the remaining required reporting steps. The screenshots show the application behaved as requested: it displayed the red refusal and blank canvas for the small plot, and a plan was present again after the plot was restored.\nUpdate the workflow to save the refusal text immediately, then explicitly set the plot back to 18 by 14, generate, verify the returned drawing, and produce the requested assertion summary instead of issuing repeated waits.",
+      "tests": [
+        {
+          "name": "Step 1",
+          "status": "failed",
+          "detail": "The application showed the required refusal, cleared the unsuitable drawing, and later showed a drawing again, but the automation stopped before completing its required report."
+        }
+      ],
+      "appFindings": {
+        "errors": 0,
+        "warnings": 0,
+        "notes": 0,
+        "reachable": 11,
+        "total": 11,
+        "issues": []
+      },
+      "evidence": ".testmuai/evidence/74ee5b3e-891e-416d-a51f-7c5fed85ff30.evidence",
+      "source": "kane-cli run"
+    },
+    {
+      "id": "2026-11-14-the-app-refuses-a-program-that-does-not-fit-run2-472e117",
+      "name": "the-app-refuses-a-program-that-does-not-fit",
+      "title": "The app refuses a program that does not fit",
+      "session": "f09a1a5f-e92c-4bbf-a96f-8f3ee40a0ddb",
+      "startedAt": "2026-11-14T09:24:55.941Z",
+      "status": "failed",
+      "durationS": 183.3,
+      "credits": 59.146625500000006,
+      "commit": "472e117",
+      "summary": "The run completed the small-plot check, then got stuck instead of carrying out its queued follow-up actions. The visible page still had usable width and depth inputs and a Generate button, so the run ended without completing the required recovery check.\nUpdate the automation to continue after the refusal assertions: fill the two plot inputs with 18 and 14, click Generate the plan, wait for the canvas result, and record every requested saved value before ending.",
+      "tests": [
+        {
+          "name": "Step 1",
+          "status": "failed",
+          "detail": "The app correctly refused the undersized plot and cleared the drawing, but the automation stopped before it reset the plot to 18 × 14 and checked that a plan returned."
+        }
+      ],
+      "appFindings": {
+        "errors": 0,
+        "warnings": 0,
+        "notes": 0,
+        "reachable": 11,
+        "total": 11,
+        "issues": []
+      },
+      "evidence": ".testmuai/evidence/b0b6f4b3-5abb-407a-b5e4-e4e7f0b952b4.evidence",
+      "source": "kane-cli run"
+    },
+    {
+      "id": "2026-11-14-the-app-refuses-a-program-that-does-not-fit-run1-122716b",
+      "name": "the-app-refuses-a-program-that-does-not-fit",
+      "title": "The app refuses a program that does not fit",
+      "session": "21312eb5-89da-410f-893c-04a29464b9a7",
+      "startedAt": "2026-11-14T09:09:25.106Z",
+      "status": "failed",
+      "durationS": 79,
+      "credits": 27.591744999999996,
+      "commit": "122716b",
+      "summary": "The refusal message reports remaining dimensions after setbacks instead of the two area numbers required to explain why the program does not fit.\nUpdate the red refusal box to state both the program area requested and the usable plot area available, while retaining the no-drawing state.\nevidence: objective_contradiction: with a detail line that gives the area asked for and the area the plot holds.",
+      "tests": [
+        {
+          "name": "Step 1",
+          "status": "failed",
+          "detail": "The app refuses the small plot and clears the drawing, but its red message does not provide the required area asked for and area the plot holds."
+        }
+      ],
+      "appFindings": {
+        "errors": 0,
+        "warnings": 0,
+        "notes": 0,
+        "reachable": 11,
+        "total": 11,
+        "issues": []
+      },
+      "evidence": ".testmuai/evidence/f81e4ff6-797f-4ea3-bdfe-e8b10ab75eae.evidence",
+      "source": "kane-cli run"
+    },
+    {
+      "id": "2026-11-14-the-staircase-can-be-walked-to-run3-122716b",
+      "name": "the-staircase-can-be-walked-to",
+      "title": "The staircase can be walked to",
+      "session": "442f0791-a3bf-4c2a-bb33-e31b9d633493",
+      "startedAt": "2026-11-14T09:05:32.716Z",
+      "status": "passed",
+      "durationS": 138.5,
+      "credits": 47.629514,
+      "commit": "122716b",
+      "summary": "Reviewed the Ground floor plan and located the staircase, including a door opening into the stairwell.\nChecked the Findings panel, which showed “Nothing found” for the staircase.\nReviewed the Floor 2 plan and confirmed that the staircase is also drawn there as the arriving flight.\nThe staircase has a door, appears on both storeys, and is usable.",
+      "tests": [
+        {
+          "name": "Step 1",
+          "status": "passed",
+          "detail": "reviewed the staircase on the floor-plan site"
+        }
+      ],
+      "appFindings": {
+        "errors": 0,
+        "warnings": 0,
+        "notes": 0,
+        "reachable": 11,
+        "total": 11,
+        "issues": []
+      },
+      "evidence": ".testmuai/evidence/fe6e5165-d79b-4359-ae93-a489ccb286da.evidence",
+      "source": "kane-cli run"
+    },
+    {
+      "id": "2026-11-14-the-staircase-can-be-walked-to-run2-122716b",
+      "name": "the-staircase-can-be-walked-to",
+      "title": "The staircase can be walked to",
+      "session": "66d31685-9b60-4686-a23e-ba52a39e64ea",
+      "startedAt": "2026-11-14T08:57:37.215Z",
+      "status": "failed",
+      "durationS": 109.2,
+      "credits": 43.9716475,
+      "commit": "122716b",
+      "summary": "The plan shows the staircase on the ground floor, but the upper-floor drawing shows only the stairwell area rather than the required arriving flight.\nUpdate the upper-floor plan renderer so a staircase that rises from the ground floor is also drawn on Floor 2 as the arriving flight. Recheck that both storey tabs show their corresponding stair representation.\nevidence: objective_contradiction: Checkpoint assertion failed: \"the staircase is drawn there too, as the flight arriving at that level\"",
+      "tests": [
+        {
+          "name": "Step 1",
+          "status": "failed",
+          "detail": "The ground-floor staircase is present, but its arriving flight is not drawn on Floor 2."
+        }
+      ],
+      "appFindings": {
+        "errors": 0,
+        "warnings": 0,
+        "notes": 0,
+        "reachable": 11,
+        "total": 11,
+        "issues": []
+      },
+      "evidence": ".testmuai/evidence/59c0ba51-0bad-4d03-b309-411846f11ea4.evidence",
+      "source": "kane-cli run"
+    },
+    {
+      "id": "2026-11-14-the-staircase-can-be-walked-to-run1-1cdaaf5",
+      "name": "the-staircase-can-be-walked-to",
+      "title": "The staircase can be walked to",
+      "session": "12bcff78-8229-4f13-8981-88630f9048d7",
+      "startedAt": "2026-11-14T08:48:35.084Z",
+      "status": "failed",
+      "durationS": 68,
+      "credits": 25.334719999999997,
+      "commit": "1cdaaf5",
+      "summary": "The ground-floor drawing shows a door opening with a swing arc at the foot of the stairwell, labeled as the front door. The agent reached the correct floor and read the findings panel, but then misread that visible entrance as not being a door into the stairs.\nUpdate the visual check to recognize an exterior/front door opening directly into the stairwell as a valid stair entrance, then continue to verify Floor 2 before deciding usability.",
+      "tests": [
+        {
+          "name": "Step 1",
+          "status": "failed",
+          "detail": "The run failed because it incorrectly treated the stairwell door as absent."
+        }
+      ],
+      "appFindings": {
+        "errors": 0,
+        "warnings": 0,
+        "notes": 0,
+        "reachable": 11,
+        "total": 11,
+        "issues": []
+      },
+      "evidence": ".testmuai/evidence/36871c3b-c8de-4e35-80ed-bbb1b7cce5aa.evidence",
+      "source": "kane-cli run"
+    },
+    {
+      "id": "2026-11-14-nothing-stands-in-a-doorway-run1-1cdaaf5",
+      "name": "nothing-stands-in-a-doorway",
+      "title": "Nothing stands in a doorway",
+      "session": "63df5bf0-886e-499f-bd6c-2673f22b7b80",
+      "startedAt": "2026-11-14T08:46:51.767Z",
+      "status": "passed",
+      "durationS": 63.4,
+      "credits": 29.1762475,
+      "commit": "1cdaaf5",
+      "summary": "Reviewed the findings on Floor 1 and then switched to Floor 2 to check its findings as well.\nChecked the space immediately inside a door on the floor plan and confirmed it was clear of furniture.\nNo findings reported furniture blocking a doorway on either floor.\nResult: the doorway-clearance check passed, and there were no doorway-blocking furniture findings.",
+      "tests": [
+        {
+          "name": "Step 1",
+          "status": "passed",
+          "detail": "reviewed doorway-blocking furniture findings on the floor-plan site"
+        }
+      ],
+      "appFindings": {
+        "errors": 0,
+        "warnings": 0,
+        "notes": 0,
+        "reachable": 11,
+        "total": 11,
+        "issues": []
+      },
+      "evidence": ".testmuai/evidence/a5dc0023-952d-495f-a9fb-29773f9d41b8.evidence",
+      "source": "kane-cli run"
+    },
+    {
       "id": "2026-11-14-every-room-can-be-walked-to-run1-1cdaaf5",
       "name": "every-room-can-be-walked-to",
       "title": "Every room can be walked to",

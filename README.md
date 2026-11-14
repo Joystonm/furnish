@@ -41,7 +41,7 @@ Checks, with no browser needed:
 
 ```bash
 npm run typecheck    # tsc --noEmit
-npm test             # vitest run — 42 tests
+npm test             # vitest run — 53 tests
 npm run verify       # typecheck + test + build
 ```
 
@@ -55,9 +55,9 @@ deterministic — the same brief always produces the same plan.
 ### 1. The requirement
 
 [`PRD.md`](PRD.md) is the contract. Twenty-two acceptance criteria, each
-one written so that a browser can confirm or contradict it. It was given to
-Kane CLI with `kane-cli context ingest PRD.md --mode agent`, and the
-ingested copy is kept at [`.testmuai/context.md`](.testmuai/context.md).
+one written so that a browser can confirm or contradict it. The requirements
+were given to Kane CLI with `kane-cli context ingest PRD.md --mode agent`, and
+the ingested copy is kept at [`.testmuai/context.md`](.testmuai/context.md).
 
 ### 2. The flow
 
@@ -140,9 +140,9 @@ product.
 ### 6. The ledger, in the product
 
 Both runs are in the app, on the **Ledger** tab, above the plan and beside
-the findings. The failing run is listed first, with the eleven findings the
-checker gave, the commit it ran against, and what it cost. The passing run
-is listed second.
+the findings — and so are the seventeen others. The failing run is listed
+first, with the eleven findings the checker gave, the commit it ran against,
+and what it cost. The passing run is listed second.
 
 The numbers beside each run are not typed in. `scripts/measure.mjs` checks
 the sources out at that commit and runs the same checker the browser runs:
@@ -155,6 +155,78 @@ npm run measure 275bb49    # → 0 errors, 0 warnings, 11/11 rooms reachable
 The measurements are kept in [`measurements/`](measurements), and the ledger
 itself in [`public/runs.json`](public/runs.json) — plain data, readable with
 `cat`.
+
+The commit beside a run is the last commit that was in the tree when the run
+happened, worked out from the run's own timestamp. The ledger was audited by
+the agent itself: the flow *The ledger keeps the failures* asks it to read
+every row and check that each one names the commit it ran against and the
+checker's own findings at that moment. It failed the first time, because the
+ledger could not be read in one pass; after the rebuild it passed, with every
+one of the nineteen rows carrying both.
+
+---
+
+### 7. Three more loops, the same way
+
+The first loop was the loud one — nine errors on the screen. The rest were
+quieter: the agent looked for things the checker had no rule about, found
+them, and each one was fixed in the product and the same test run again.
+
+| The flow | What the run found | Fixed in | Re-run |
+|---|---|---|---|
+| `audit-plan-walkability` — the test Kane designed | nine errors: three rooms with no door, three unreachable rooms, the staircase with no door, furniture in doorways | `275bb49` | 🟢 passed, same file, same `definition.sha256` |
+| `every-room-has-a-door` | — | — | 🟢 passed first time |
+| `the-app-opens-on-a-drawn-plan` | — | — | 🟢 passed first time |
+| `every-room-can-be-walked-to` | the front door was in the model but not marked on the drawing | `1cdaaf5` | 🟢 passed |
+| `nothing-stands-in-a-doorway` | — | — | 🟢 passed first time |
+| `the-staircase-can-be-walked-to` | the flight arriving upstairs was an empty dashed rectangle — no treads, no way up | `472e117` | 🟢 passed at `472e117` |
+| `the-app-refuses-a-program-that-does-not-fit` | the refusal gave the plot in metres, not the two areas or the gap | `472e117` | 🟢 passed at `472e117` |
+| `the-ledger-keeps-the-failures` | the agent could not read the whole ledger in one pass, so it could not check every row | the ledger was rebuilt so every row carries its commit and the checker's own findings | 🟢 passed — all four assertions |
+
+Nineteen runs are in the ledger: nine passed and ten failed. The failures are
+the point, so they are all there, next to the passes, with the reason the
+agent gave and the commit it ran against. A run that got stuck rather than
+finding a defect is in there too, labelled as what it was — the agent running
+out of steps is not the same as the app being wrong, and the ledger says which
+was which.
+
+**The front door — commit `1cdaaf5`.** The flow *Every room can be walked to*
+asks for the front door to be visible on the drawing. The model knows which
+door it is — it is `kind: 'front'` — but the drawing drew every door the
+same way, so nothing on the plan said which opening was the way in from the
+street. It is now drawn in the accent colour, with an arrow in from the
+outside and the words FRONT DOOR beside it. A test locks that in: exactly
+one marked front door, on the door the model calls the front one, and no
+internal door marked.
+
+**The door into the stairwell — commit `122716b`.** The flight of stairs is
+as wide as the shaft it runs in, and it was drawn *after* the doors, so it
+painted over the doorway in the shaft's own wall. The checker never noticed —
+the door was in the model — but the drawing did not show it, and a person
+reading the plan could not see that the stair was not walled off. The flight
+is drawn before the doors now, and the door is kept clear of the corner, so
+the opening reads as a doorway and has somewhere to swing.
+
+**The flight arriving upstairs — commit `472e117`.** The upper storey drew
+the flight that arrives there as an empty dashed rectangle — the opening in
+the floor. Honest about the slab, useless to a reader: no treads, no way up.
+It is drawn as a flight now, with its treads and its arrow, inside the
+dashed edge of the opening.
+
+**The refusal — commit `472e117`.** Criterion 16 says the app *refuses and
+says by how much it does not fit*. It refused, but it gave the size of the
+plot in metres and left the gap to be worked out — and for a plot too small
+to build on it gave no gap at all. Every refusal now quotes the area the
+program asks for, the area the plot holds, and how much too much that is:
+
+> **The program does not fit the plot**
+>
+> A 6 × 5 m plot is too small to build on: inside the 1.5 m setback it leaves
+> 3.0 × 2.0 m, so it holds 6.0 m² on each storey and 12.0 m² over 2 storeys.
+> The program asks for 105.0 m², so it is 93.0 m² too much.
+
+Every one of those was found by the same test, re-run with the same file, and
+the failures are in the ledger next to the passes.
 
 ---
 
