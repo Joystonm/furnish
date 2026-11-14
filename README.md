@@ -163,7 +163,7 @@ the agent itself: the flow *The ledger keeps the failures* asks it to read
 every row and check that each one names the commit it ran against and the
 checker's own findings at that moment. It failed the first time, because the
 ledger could not be read in one pass; after the rebuild it passed, with every
-one of the nineteen rows carrying both.
+one of the twenty rows carrying both.
 
 ---
 
@@ -184,7 +184,7 @@ them, and each one was fixed in the product and the same test run again.
 | `the-app-refuses-a-program-that-does-not-fit` | the refusal gave the plot in metres, not the two areas or the gap | `472e117` | 🟢 passed at `472e117` |
 | `the-ledger-keeps-the-failures` | the agent could not read the whole ledger in one pass, so it could not check every row | the ledger was rebuilt so every row carries its commit and the checker's own findings | 🟢 passed — all four assertions |
 
-Nineteen runs are in the ledger: nine passed and ten failed. The failures are
+Twenty runs are in the ledger: ten passed and ten failed. The failures are
 the point, so they are all there, next to the passes, with the reason the
 agent gave and the commit it ran against. A run that got stuck rather than
 finding a defect is in there too, labelled as what it was — the agent running

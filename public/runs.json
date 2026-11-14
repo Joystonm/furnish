@@ -1,6 +1,45 @@
 {
   "runs": [
     {
+      "id": "2026-11-14-audit-plan-walkability-run3-9c3d5cb",
+      "name": "audit-plan-walkability",
+      "title": "The same audit passes on the current build",
+      "session": "f7db9850-494b-44d2-80db-9bf71e853a0d",
+      "startedAt": "2026-11-14T12:22:03.726Z",
+      "status": "passed",
+      "durationS": 69.5,
+      "credits": 0.0,
+      "commit": "9c3d5cb",
+      "summary": "Re-ran the same audit test against the current build, with the same definition hash as the run that failed. All sixteen steps passed: the drawing still shows a north point, a scale bar, staircase treads and a door into the stairwell, and the findings panel still reports that every room has a door, every door can be reached, and nothing is standing in a doorway.",
+      "tests": [
+        {
+          "name": "Step 14",
+          "status": "passed",
+          "detail": "the drawing shows a north point and a scale bar, and the staircase has treads and a door into it"
+        },
+        {
+          "name": "Step 15",
+          "status": "passed",
+          "detail": "every room drawn on the ground floor is one the findings panel says can be reached"
+        },
+        {
+          "name": "Step 16",
+          "status": "passed",
+          "detail": "no piece of furniture stands in a doorway"
+        }
+      ],
+      "appFindings": {
+        "errors": 0,
+        "warnings": 0,
+        "notes": 0,
+        "reachable": 11,
+        "total": 11,
+        "issues": []
+      },
+      "evidence": ".testmuai/evidence/2d7957da-87de-48ca-947f-72ad056bb23e.evidence",
+      "source": "kane-cli testmd run"
+    },
+    {
       "id": "2026-11-14-the-staircase-can-be-walked-to-run5-472e117",
       "name": "the-staircase-can-be-walked-to",
       "title": "The staircase can be walked to",

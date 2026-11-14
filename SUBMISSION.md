@@ -28,7 +28,7 @@ role" field.
 > another, the staircase was taken out of the footprint before the rooms were
 > partitioned so no room is ever bitten by it, and the furniture was moved clear of
 > every doorway. The **same** designed test was then re-run and passed, and the app
-> keeps the whole verification history — nineteen runs, nine of them passing and ten
+> keeps the whole verification history — twenty runs, ten of them passing and ten
 > of them failing, each with its sealed evidence pack — on a Ledger tab, so the
 > verification history is part of the product rather than a claim in a README. Six
 > more loops were closed the same way after that: a front door nobody could see on
@@ -47,7 +47,7 @@ on screen for more than half the video. YouTube, unlisted.
 | Time | Shot | What is on screen |
 |---|---|---|
 | 0:00 | **Cold open — the app** | The studio running, a floor plan already drawn, the findings panel clean, the status bar reading `Rooms 11/11 reachable · 0 errors`. Say what the app is in one sentence. |
-| 0:20 | **Cold open — the ledger** | Click to the **Ledger** tab. Nineteen runs, newest first — green and red. Scroll to the very first one: red, and it lists the eleven findings the agent read off the panel. *"This is the point of the project."* |
+| 0:20 | **Cold open — the ledger** | Click to the **Ledger** tab. Twenty runs, newest first — green and red, with the tally at the top: twenty runs, ten passed, ten failed. Scroll to the very first one: red, and it lists the eleven findings the agent read off the panel. *"This is the point of the project."* |
 | 0:45 | **The requirement** | `PRD.md` open in the editor. Then the terminal: `kane-cli context ingest PRD.md --mode agent`, then `kane-cli design tests --mode agent`. The designed test file appears — point out the `assurance:` block. *"Kane wrote the test; nobody did."* |
 | 1:15 | **The failing run** | `kane-cli run "<objective>" --agent --name audit-plan-walkability`. The real browser opens and moves on its own. Let the run play — cut to the app window when it starts clicking around. |
 | 1:55 | **The failing result card** | The red card. Duration, credits, one line of what happened. Then open the evidence pack: the screenshot of the findings panel with the eleven findings in it. |
@@ -116,31 +116,30 @@ that has not been made public yet.
 
 | Requirement | Status |
 |---|---|
-| Public GitHub repo, initialised on/after 12 November | ✅ created 13 Nov 2026 · **push pending** |
+| Public GitHub repo, initialised on/after 12 November | ✅ created 13 Nov 2026 · **pushed** |
 | Setup instructions in the README | ✅ [`README.md`](README.md) |
-| Kane CLI used, at least one run | ✅ nineteen runs recorded in the app's ledger — nine passed, ten failed |
+| Kane CLI used, at least one run | ✅ twenty runs recorded in the app's ledger — ten passed, ten failed |
 | Explanation: app, coding agent, Kane's role | ✅ §1 above |
-| YouTube demo, 3–5 min, app **and** Kane running | ⬜ **not recorded yet** — shot list in §2 |
+| YouTube demo, 3–5 min, app **and** Kane running | ⬜ **not uploaded yet** — recorded, 3 min 27 s · shot list in §2 |
 | Live URL (optional) | ⬜ not deployed — the runnable command is the fallback |
 | Two public launch posts | ⬜ **not posted yet** — drafts in §3 |
 | Credentials for any login/paid service | ✅ none — no login, no paid service, no API key |
-| Recorded-run / backup-deployment fallback | ✅ nineteen sealed evidence packs and every run's own result file in `.testmuai/tests/output-*/Result.md` |
+| Recorded-run / backup-deployment fallback | ✅ twenty sealed evidence packs — one per run, each with its own `run.yaml`, `result.yaml`, step records and screenshots — plus the run's own `Result.md` under `.testmuai/tests/output-*/` for eighteen of them |
 | TestMu AI account, same email for credit claim | ✅ the account used for the runs |
-| Repo pushed before 11:59 PM IST, 19 Nov | ⬜ **the one hard blocker** |
+| Repo pushed before 11:59 PM IST, 19 Nov | ✅ pushed — `Joystonm/furnish-verified`, `main` |
 
-### The one hard blocker
+### Where the repo stands
 
-The repository is built, committed and clean locally, and the GitHub repository
-`Joystonm/furnish-verified` exists and is public. **The push has not happened** —
-the sandbox classifier blocked it because it was adding a new public remote without
-the user's explicit say-so. The command:
+The repository is public at `Joystonm/furnish-verified` and `main` is pushed.
+If anything needs to go up again, the command is:
 
 ```bash
 cd /f/furnish-verified
-git push -u origin main
+git push origin main
 ```
 
-Do it early. Repositories lock at the deadline.
+Repositories lock at the deadline, so push anything remaining before
+11:59 PM IST on 19 November.
 
 ### The loops, in one table
 
@@ -158,7 +157,7 @@ requirement → agent-designed test → run → failure → repair → the same 
 | `the-app-refuses-a-program-that-does-not-fit` | the refusal gave the plot in metres, not the two areas or the gap | `472e117` | 🟢 passed at `472e117` |
 | `the-ledger-keeps-the-failures` | the agent could not read the whole ledger in one pass | the ledger was rebuilt so every row carries its commit and the checker's own findings | 🟢 passed — all four assertions |
 
-Ten of the nineteen runs failed. Every one of them is in the app's ledger with
+Ten of the twenty runs failed. Every one of them is in the app's ledger with
 the reason the agent gave, and a run where the *agent* ran out of steps is
 labelled as that — it is not a defect in the product.
 

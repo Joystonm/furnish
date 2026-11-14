@@ -32,8 +32,18 @@ export function LedgerPanel() {
     );
   }
 
+  const passed = runs.filter((run) => run.status === 'passed').length;
+  const failed = runs.length - passed;
+
   return (
     <div className="ledger" data-testid="ledger" data-run-count={runs.length}>
+      <div className="ledger__tally" data-testid="ledger-tally">
+        <span className="ledger__count">
+          <strong>{runs.length}</strong> runs
+        </span>
+        <span className="ledger__pill ledger__pill--ok">{passed} passed</span>
+        <span className="ledger__pill ledger__pill--fail">{failed} failed</span>
+      </div>
       {runs.map((run) => (
         <div className="run" key={run.id} data-testid="ledger-run" data-run-status={run.status}>
           <div className="run__head">
