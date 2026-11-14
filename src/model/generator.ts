@@ -659,10 +659,14 @@ export function generatePlan(brief: Brief): GenerateResult {
     // foot of the flight, so you walk in and straight on up. Every storey
     // above is at the head of the flight that arrives there, which is the
     // landing you step off onto.
+    //
+    // The door is kept a little clear of the end of the wall. Flush against
+    // the corner the opening stops reading as a doorway — it becomes a nick
+    // in the wall, and the swing has nowhere to go.
     for (let floor = 0; floor < storeys; floor++) {
       const at =
         floor === 0
-          ? stairwell.y + stairwell.depth - 0.45
+          ? stairwell.y + stairwell.depth - 0.45 - 0.25
           : stairwell.y + stairwell.depth - floor * flightRun - 0.45;
       const door = stairDoor(stairwell, floor, at, `d${doors.length + 1}`);
       door.joins = [STAIR_ID, circulation[floor].id];

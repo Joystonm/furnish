@@ -39,6 +39,10 @@ export interface LedgerRun {
   id: string;
   /** A short name for the run, e.g. `flows-2026-11-13`. */
   name: string;
+  /** The flow's own title, when the run was one of the flows. */
+  title?: string;
+  /** The agent session the run belongs to — one run, one session. */
+  session?: string;
   /** ISO 8601. */
   startedAt: string;
   status: 'passed' | 'failed';

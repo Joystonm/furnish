@@ -3,7 +3,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { defaultBrief } from '../model/report';
-import { generatePlan } from '../model/generator';
+import { generatePlan, STAIR_ID } from '../model/generator';
+import type { Plan } from '../model/types';
 import { PlanView } from './PlanView';
 
 /**
@@ -15,13 +16,16 @@ import { PlanView } from './PlanView';
  * street, so neither a person nor an agent looking at the drawing could tell.
  */
 
-function draw() {
-  const brief = defaultBrief();
-  const result = generatePlan(brief);
+function plan(): Plan {
+  const result = generatePlan(defaultBrief());
   if (!result.ok) throw new Error('The default brief did not draw a plan.');
+  return result.plan;
+}
+
+function draw() {
   return renderToStaticMarkup(
     createElement(PlanView, {
-      plan: result.plan,
+      plan: plan(),
       floor: 0,
       flagged: new Set<string>(),
       selected: null,
@@ -42,10 +46,7 @@ describe('the front door on the drawing', () => {
   });
 
   it('marks the door the model calls the front one', () => {
-    const brief = defaultBrief();
-    const result = generatePlan(brief);
-    if (!result.ok) throw new Error('The default brief did not draw a plan.');
-    const front = result.plan.doors.filter((door) => door.kind === 'front');
+    const front = plan().doors.filter((door) => door.kind === 'front');
     expect(front).toHaveLength(1);
     const markup = draw();
     expect(markup).toContain('data-door-id="' + front[0].id + '"');
@@ -53,10 +54,7 @@ describe('the front door on the drawing', () => {
   });
 
   it('leaves the internal doors unmarked', () => {
-    const brief = defaultBrief();
-    const result = generatePlan(brief);
-    if (!result.ok) throw new Error('The default brief did not draw a plan.');
-    const internal = result.plan.doors.filter((door) => door.kind !== 'front' && door.floor === 0);
+    const internal = plan().doors.filter((door) => door.kind !== 'front' && door.floor === 0);
     expect(internal.length).toBeGreaterThan(0);
     const markup = draw();
     for (const door of internal) {
@@ -66,5 +64,36 @@ describe('the front door on the drawing', () => {
       const groupEnd = markup.indexOf('</g>', at);
       expect(markup.slice(at, groupEnd)).not.toContain('plan-front-door');
     }
+  });
+});
+
+/**
+ * The door into the stairwell has to be visible too.
+ *
+ * The flight of stairs is as wide as the shaft it runs in, so when it was
+ * drawn after the doors it painted over the doorway in the shaft's own wall.
+ * The checker never noticed — the door is in the model — but the drawing did
+ * not show it, and a person reading the plan could not see that the stair was
+ * not walled off.
+ */
+describe('the door into the stairwell', () => {
+  it('is drawn over the flight, not under it', () => {
+    const stairDoor = plan().doors.find((door) => door.joins.includes(STAIR_ID) && door.floor === 0);
+    expect(stairDoor).toBeDefined();
+    const markup = draw();
+    const flight = markup.indexOf('data-testid="plan-stair"');
+    const doorway = markup.indexOf('data-door-id="' + stairDoor!.id + '"');
+    expect(flight).toBeGreaterThan(-1);
+    expect(doorway).toBeGreaterThan(flight);
+  });
+
+  it('is clear of the corner, so the opening reads as a doorway', () => {
+    const stairwell = plan().rooms.find((room) => room.id === STAIR_ID);
+    expect(stairwell).toBeDefined();
+    const stairDoor = plan().doors.find((door) => door.joins.includes(STAIR_ID) && door.floor === 0);
+    expect(stairDoor).toBeDefined();
+    const south = stairwell!.y + stairwell!.depth;
+    const reveal = south - (stairDoor!.y + stairDoor!.width / 2);
+    expect(reveal).toBeGreaterThan(0.19);
   });
 });

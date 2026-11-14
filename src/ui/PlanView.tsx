@@ -332,6 +332,18 @@ export function PlanView({ plan, floor, flagged, selected, onSelect }: Props) {
           />
         ))}
 
+        {/* the stairs — drawn before the doors, because a flight is as wide as
+            the shaft it runs in and would otherwise paint over the doorway in
+            the shaft's own wall. The door into the stairwell has to be visible
+            or the drawing does not show what the model says. */}
+        {stairs.map((stair) => (
+          <StairGlyph
+            key={`${stair.id}-${stair.floor === floor ? 'up' : 'void'}`}
+            stair={stair}
+            mode={stair.floor === floor ? 'up' : 'void'}
+          />
+        ))}
+
         {/* the doors */}
         {doors.map((door) => {
           const glyph = doorGlyph(door, plan);
@@ -383,15 +395,6 @@ export function PlanView({ plan, floor, flagged, selected, onSelect }: Props) {
             </g>
           );
         })}
-
-        {/* the stairs */}
-        {stairs.map((stair) => (
-          <StairGlyph
-            key={`${stair.id}-${stair.floor === floor ? 'up' : 'void'}`}
-            stair={stair}
-            mode={stair.floor === floor ? 'up' : 'void'}
-          />
-        ))}
 
         {/* the furniture */}
         {furniture.map((item) => (

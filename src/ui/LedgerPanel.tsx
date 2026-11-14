@@ -43,8 +43,8 @@ export function LedgerPanel() {
             >
               {run.status === 'passed' ? 'passed' : 'failed'}
             </span>
-            <span className="run__name" title={run.name}>
-              {run.name}
+            <span className="run__name" title={run.title ?? run.name}>
+              {run.title ?? run.name}
             </span>
             <span className="run__when">{formatWhen(run.startedAt)}</span>
           </div>

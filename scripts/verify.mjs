@@ -294,7 +294,46 @@ function findEvidence() {
  */
 function readRecordedRuns() {
   const runs = [...readResultFiles(), ...readOutputFolders()];
-  return numberRuns(runs);
+  return numberRuns(dedupeBySession(runs));
+}
+
+/**
+ * One run can be written down twice.
+ *
+ * kane-cli writes a result file for a saved test and a folder for a named run.
+ * A run that is both ends up in the ledger twice, under two ids. The session
+ * id is the same in both, so it is what says that they are the same run.
+ */
+function dedupeBySession(runs) {
+  const at = new Map();
+  const merged = [];
+  for (const run of runs) {
+    if (!run.session) {
+      merged.push(run);
+      continue;
+    }
+    const known = at.get(run.session);
+    if (known === undefined) {
+      at.set(run.session, merged.length);
+      merged.push(run);
+      continue;
+    }
+    // Keep what is already known, and take whatever the other copy has and
+    // this one does not.
+    merged[known] = {
+      ...merged[known],
+      ...Object.fromEntries(
+        Object.entries(run).filter(([, value]) => value !== null && value !== undefined),
+      ),
+      appFindings: merged[known].appFindings ?? run.appFindings,
+      evidence: merged[known].evidence ?? run.evidence,
+      credits: merged[known].credits ?? run.credits,
+      commit: merged[known].commit || run.commit,
+      summary: merged[known].summary || run.summary,
+      title: merged[known].title ?? run.title,
+    };
+  }
+  return merged;
 }
 
 /**
@@ -351,6 +390,8 @@ function readResultFiles() {
     runs.push({
       id,
       name: flowName(id) ?? agent?.one_liner ?? id,
+      title: flowTitle(flowName(id) ?? ''),
+      session: field('session_id') ?? '',
       startedAt: field('started') ?? '',
       status: status === 'passed' ? 'passed' : 'failed',
       durationS: Number(field('duration_s') ?? 0),
@@ -411,10 +452,15 @@ function readOutputFolders() {
     const agent = readAgentRun(slug, field('session_id'));
     const step = text.match(/^##\s+Step\s+(\d+)/m);
     const digest = text.match(/^md5:\s*(\S+)/m)?.[1] ?? '';
+    // kane-cli numbers a repeat run of the same flow — `output-<flow>-2`.
+    // It is the same flow, run again, so it is recorded under the same name.
+    const flow = baseSlug(slug);
 
     runs.push({
       id: '',
-      name: slug,
+      name: flow,
+      title: flowTitle(flow),
+      session: field('session_id') ?? '',
       startedAt: started,
       status: status === 'passed' ? 'passed' : 'failed',
       durationS: Number(field('duration_s') ?? 0),
@@ -471,6 +517,31 @@ function commitAt(iso) {
 function flowName(id) {
   const match = id.match(/^\d{4}-\d{2}-\d{2}-(.+)-run\d+-[0-9a-f]{7}$/);
   return match?.[1] ?? null;
+}
+
+/**
+ * The flow a run folder belongs to.
+ *
+ * kane-cli keeps a repeat run of the same flow in a folder of its own and
+ * numbers it — `output-every-room-can-be-walked-to-2`. It is the same flow,
+ * run again, so the number is dropped.
+ */
+function baseSlug(slug) {
+  return String(slug).replace(/-\d+$/, '');
+}
+
+/**
+ * The title of a flow, as the flow file writes it.
+ *
+ * A person reading the ledger wants the name of the flow — "Every room can be
+ * walked to" — rather than the slug the command line used.
+ */
+function flowTitle(slug) {
+  if (!slug) return null;
+  const path = join(FLOWS_DIR, baseSlug(slug) + '.md');
+  if (!existsSync(path)) return null;
+  const text = readFileSync(path, 'utf8');
+  return text.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? null;
 }
 
 
@@ -610,7 +681,24 @@ async function main() {
   }
 
   if (flag('--rebuild')) {
-    const runs = mergeRuns([...readLedger().runs, ...readRecordedRuns()]);
+    // The record is the source of truth. A rebuild replaces the ledger's runs
+    // with the runs the agent actually made — the result files and the run
+    // folders — so a stale copy of a run cannot sit in the ledger for ever.
+    // What the old ledger knew and the record cannot say, such as the cost of
+    // a run whose event stream is no longer on this machine, is carried over.
+    const recorded = readRecordedRuns();
+    const known = readLedger().runs;
+    const runs = recorded.map((run) => {
+      const old = known.find((k) => k.session && k.session === run.session);
+      if (!old) return run;
+      return {
+        ...run,
+        credits: run.credits ?? old.credits,
+        summary: run.summary || old.summary,
+        evidence: run.evidence ?? old.evidence,
+        appFindings: run.appFindings ?? old.appFindings,
+      };
+    });
     const ordered = writeLedger(runs);
     console.log('The ledger now holds ' + ordered.length + ' run(s).');
     return;
