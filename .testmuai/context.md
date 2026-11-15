@@ -1,7 +1,8 @@
-# Furnish Verified — what the app is, and what counts as correct
+# Furnish — what the app is, and what counts as correct
 
-Furnish Verified is a home-design studio that refuses to hand over a floor plan
-nobody has walked.
+Furnish is a home-design studio that refuses to hand over a floor plan nobody has
+walked. (The hackathon project is Furnish Verified; the app itself is called
+Furnish.)
 
 You describe the house you want. The app turns that into a **program** — a list
 of rooms with areas and storeys — and lays the program out as a drawn floor
@@ -9,6 +10,10 @@ plan. The app then **checks its own drawing** against the rules about how houses
 work.
 
 The plan, the findings and the verification history are all on screen at once.
+
+**The app is served at `http://localhost:5173`** by `npm run dev`. Three routes:
+`/` (landing page), `/projects` (dashboard), `/studio` (the editor). The editor is
+where everything below lives.
 
 ## The rules the checker holds the drawing to
 
@@ -25,20 +30,36 @@ The plan, the findings and the verification history are all on screen at once.
 
 ## What a finding looks like
 
-The findings panel on the right lists every defect the checker found. Each
-finding names the room it is about and says how much is wrong. A room with a
-finding is marked in red on the drawing, and the drawing and the findings
-always agree with each other.
+The **Checks** tab in the right-hand panel lists every defect the checker found.
+Each finding names the room it is about and says how much is wrong. A room with
+a finding is marked in red on the drawing, and the drawing and the findings
+always agree with each other. When there is nothing to report the panel says
+*"Everything checks out."*
 
-## The refusal
+## When the program does not fit
 
-If the program cannot fit the plot, the app refuses and says by how much it does
-not fit. It does not draw a plan that does not fit. The refusal is a red box in
-the brief panel on the left.
+The app never quietly draws a plan that does not fit the plot. Two things can
+happen, and both are stated on screen in words and with numbers:
+
+- **The rooms are scaled down.** If the brief asks for more floor area than the
+  plot holds after setbacks, the app scales the rooms to about the percentage
+  that fits and says so, with the plot's own dimensions and the percentage in
+  the sentence: *"The brief asks for more floor area than the W × D m plot
+  allows after setbacks. Rooms were scaled to about N % of their requested size
+  — consider fewer rooms, a bigger plot, or a second storey."* (W and D are the
+  plot's size; N is the scale.) The brief panel warns before this happens:
+  *"That is more than fits comfortably. Furnish will scale the rooms down
+  rather than overflow your plot."*
+- **The program is refused.** A program that cannot be laid out as a grid at all
+  is refused outright, with the reason: *"N rooms will not fit as a grid on a
+  W × D m envelope with every room at least N m across."*
+
+Either way, the drawing that appears is one whose rooms all sit inside the
+plot.
 
 ## The ledger
 
-The Ledger tab holds the history of the independent checker — that is, the
+The **Ledger** tab holds the history of the independent checker — that is, the
 history of Kane's own runs against this app. Every run is listed, including the
 ones that failed. Each run records what was run, which flows passed and which
 failed, what the app's own checker said at the time, and the commit the app was
@@ -57,10 +78,16 @@ of anything.
 
 ## On screen
 
-- Left panel: the brief (the paragraph, the plot size, the number of storeys)
-  and the program (the editable list of rooms, areas and storeys), and the
-  Generate the plan button.
-- Middle: the drawing, with a storey tab above it.
-- Right panel: the findings, or the ledger, on two tabs.
-- Bottom: the status bar — net indoor area, footprint, coverage, how many rooms
-  are reachable, how many errors.
+- **Left rail — the Project navigator.** The storeys, as rows (*Ground floor*,
+  *First floor*), each with its rooms under it; the buttons to add a storey and
+  to change the brief.
+- **Middle — the drawing.** The plan itself, in 2D.
+- **Right panel — three tabs.** *Properties* (what is selected), *Checks* (the
+  findings), *Ledger* (the verification history).
+- **The brief** is a dialog that opens on the first visit, and can be reopened
+  from the navigator with *Change the brief*. It asks for the plot size, the
+  number of storeys and the rooms, and it has **Generate the plan** and **Load
+  the sample plan** buttons.
+- **Bottom — the status bar.** Net indoor area, footprint, gross covered, open
+  site, coverage and floor-area ratio, plus a chip that says *No errors* when
+  the checker found nothing.
