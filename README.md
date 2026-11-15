@@ -110,8 +110,8 @@ That runs, in order:
 | Step | Command | Result |
 |---|---|---|
 | Type check | `npm run typecheck` | clean |
-| Unit tests | `npm test` | **689 passed**, 19 files |
-| Production build | `npm run build` | 1,372 kB, 397 kB gzip |
+| Unit tests | `npm test` | **735 passed**, 24 files |
+| Production build | `npm run build` | 1,388 kB, 402 kB gzip |
 | End-to-end | `npm run e2e` | **65 passed** |
 
 `npm run e2e` drives a real Chromium against the real built bundle: it reads the

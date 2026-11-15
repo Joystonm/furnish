@@ -96,9 +96,9 @@ that has not been made public yet.
 > I built a floor-plan generator that checks its own output, and then I had an
 > independent browser agent try to break it.
 >
-> It broke it. Nine errors: rooms with no door, three rooms you could not walk to
-> from the front door, the staircase with no way in, and three pieces of furniture
-> standing in doorways.
+> It broke it. Nine errors: two rooms had nowhere to go, three rooms you could not
+> walk to from the front door, the staircase with no way in, and three pieces of
+> furniture standing in doorways.
 >
 > The findings went back into the generator, which was rebuilt — doors are now
 > grown as a tree from the corridor so no room is ever a passage to another, the
@@ -145,7 +145,7 @@ that has not been made public yet.
 | Live URL (optional) | ⬜ not deployed — the runnable command is the fallback |
 | Two public launch posts | ⬜ **not posted yet** — drafts in §3 |
 | Credentials for any login/paid service | ✅ none — no login, no paid service, no API key |
-| Recorded-run / backup-deployment fallback | ✅ twenty sealed evidence packs — one per run, each with its own `run.yaml`, `result.yaml`, step records and screenshots — plus the run's own `Result.md` under `.testmuai/tests/output-*/` for eighteen of them |
+| Recorded-run / backup-deployment fallback | ✅ twenty-three sealed evidence packs — one for each of the twenty runs in the ledger, plus three from runs that were made and not recorded — each with its own `run.yaml`, `result.yaml`, step records and screenshots; and the run's own `Result.md` under `.testmuai/tests/output-*/` for every flow |
 | TestMu AI account, same email for credit claim | ✅ the account used for the runs |
 | Repo pushed before 11:59 PM IST, 19 Nov | ✅ pushed — `Joystonm/furnish-verified`, `main` (three commits and the working tree are still local; see §5) |
 
@@ -165,7 +165,7 @@ requirement → agent-designed test → run → failure → repair → the same 
 
 | The flow | What the run found | Fixed in | Re-run |
 |---|---|---|---|
-| `audit-plan-walkability` — the test Kane designed from `PRD.md` | nine errors: three rooms with no door, three unreachable rooms, the staircase with no door, furniture in doorways | `275bb49` | 🟢 passed — same file, same `definition.sha256` |
+| `audit-plan-walkability` — the test Kane designed from `PRD.md` | nine errors: two rooms with nowhere to go, three rooms that could not be walked to from the front door, the staircase with no door, and three pieces of furniture standing in doorways | `275bb49` | 🟢 passed — same file, same `definition.sha256` |
 | `every-room-has-a-door` | — | — | 🟢 passed first time |
 | `the-app-opens-on-a-drawn-plan` | — | — | 🟢 passed first time |
 | `every-room-can-be-walked-to` | the front door was in the model but not marked on the drawing | `1cdaaf5` | 🟢 passed |

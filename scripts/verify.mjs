@@ -24,8 +24,10 @@
  *                                            recorded results, spending
  *                                            nothing
  *
- * The app has to be running on port 5174 (`npm run dev`, or `npm run build`
- * and then `npm run preview`) for the flows to have anything to look at.
+ * The app has to be running on port 5173 (`npm run dev`, or `npm run build`
+ * and then `npm run preview`) for the flows to have anything to look at. The
+ * flow files name the app as {{APP_URL}}, so `FURNISH_URL` moves both the
+ * browser and the text the agent is given to the same place.
  */
 
 import { spawn, spawnSync } from 'node:child_process';
@@ -39,7 +41,7 @@ const FLOWS_DIR = join(ROOT, 'flows');
 const RESULTS_DIR = join(ROOT, '.testmuai', 'results');
 const MEASUREMENTS_DIR = join(ROOT, 'measurements');
 const LEDGER = join(ROOT, 'public', 'runs.json');
-const APP_URL = process.env.FURNISH_URL ?? 'http://localhost:5174';
+const APP_URL = process.env.FURNISH_URL ?? 'http://localhost:5173';
 
 const argv = process.argv.slice(2);
 const flag = (name) => argv.includes(name);

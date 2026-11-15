@@ -95,30 +95,33 @@ async function cameraState(page: Page): Promise<CameraState | null> {
 }
 
 /**
- * Count the frames the application draws while this runs, in the page.
+ * Wait for the application to draw its next frame, in the page.
  *
  * The view draws about four frames a second on a machine with no GPU, and a key
  * that is pressed and released between two frames is never seen by the camera
  * at all. So any test that holds a key down has to know that a frame went by
  * while it was held — otherwise "the camera did not move" is true for the wrong
  * reason, and a test that passes is a test that proves nothing.
+ *
+ * The wait is for the *next* frame rather than a count taken inside a fixed
+ * slice of wall clock, because that slice is the part that breaks. Under a
+ * loaded run — the whole suite in one go — a second and a half can pass with
+ * nothing drawn at all, and the test would fail on a machine that is merely
+ * busy, having proved nothing either way. Waiting for the next frame asks the
+ * same question and takes as long as the machine needs.
  */
-async function framesDuring(page: Page, ms: number): Promise<number> {
-  return page.evaluate(async (window_ms) => {
-    let n = 0;
-    let last = (window as unknown as { __walk?: unknown }).__walk;
+async function waitForFrame(page: Page, timeoutMs = 20_000): Promise<boolean> {
+  return page.evaluate(async (ms) => {
+    const w = window as unknown as { __walk?: unknown };
+    // The walk state is rebuilt every frame, so a new object is a new frame.
+    const last = w.__walk;
     const t0 = performance.now();
-    while (performance.now() - t0 < window_ms) {
-      const w = (window as unknown as { __walk?: unknown }).__walk;
-      // The walk state is rebuilt every frame, so a new object is a new frame.
-      if (w && w !== last) {
-        n++;
-        last = w;
-      }
+    while (performance.now() - t0 < ms) {
+      if (w.__walk && w.__walk !== last) return true;
       await new Promise((r) => setTimeout(r, 16));
     }
-    return n;
-  }, ms);
+    return false;
+  }, timeoutMs);
 }
 
 /** Which tool the toolbar currently shows as pressed. */
@@ -181,11 +184,11 @@ test('Q turns the camera in walk mode', async ({ page }) => {
   expect(before, 'the app published its walk state').not.toBeNull();
 
   await page.keyboard.down('KeyQ');
-  const frames = await framesDuring(page, 1200);
+  const drew = await waitForFrame(page);
   await page.keyboard.up('KeyQ');
 
   const after = await cameraState(page);
-  expect(frames, 'the camera drew a frame while the key was held').toBeGreaterThan(0);
+  expect(drew, 'the camera drew a frame while the key was held').toBe(true);
   // The camera turned on the spot: it did not walk, it looked.
   expect(Math.hypot(after!.x - before!.x, after!.z - before!.z), 'the camera stayed put').toBeLessThan(0.01);
   // The yaw is the camera's own rotation, which accumulates and never wraps, so
@@ -204,11 +207,11 @@ test('E turns the other way', async ({ page }) => {
   expect(before, 'the app published its walk state').not.toBeNull();
 
   await page.keyboard.down('KeyE');
-  const frames = await framesDuring(page, 1200);
+  const drew = await waitForFrame(page);
   await page.keyboard.up('KeyE');
 
   const after = await cameraState(page);
-  expect(frames, 'the camera drew a frame while the key was held').toBeGreaterThan(0);
+  expect(drew, 'the camera drew a frame while the key was held').toBe(true);
   // The opposite sign to Q's, which is what "the other way" means.
   expect(after!.yaw - before!.yaw, 'the camera turned the other way').toBeLessThan(-0.3);
 });
@@ -237,7 +240,7 @@ test('typing in the assistant does not walk the camera', async ({ page }) => {
   // the bug this test exists to catch. The hold is long enough for several
   // frames, and the count below says how many actually went by.
   await page.keyboard.down('w');
-  const frames = await framesDuring(page, 1500);
+  const drew = await waitForFrame(page);
   const during = await cameraState(page);
   await page.keyboard.up('w');
 
@@ -248,7 +251,7 @@ test('typing in the assistant does not walk the camera', async ({ page }) => {
 
   // The camera had to have had a chance to move, or "it did not move" would be
   // true for the wrong reason.
-  expect(frames, 'the camera drew a frame while the key was held').toBeGreaterThan(0);
+  expect(drew, 'the camera drew a frame while the key was held').toBe(true);
 
   // The camera was never told about the key — that is the fix, and it is the
   // camera's own map of what it has been told, not a picture of what it did.
