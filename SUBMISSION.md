@@ -2,10 +2,11 @@
 
 Everything the Kane CLI Online Hackathon asks for, in one place.
 
-- **Deadline:** 11:59 PM IST on 19 November (10:29 AM PT). *"No pushes after this."*
-- **Repository:** `Joystonm/furnish-verified`, initialised 13 November 2026 — inside the
-  12–19 November window. (The working copy is `F:\Argon`; `Joystonm/Argon` was created
-  15 October and is therefore **outside** the window, so it is not the submission repo.)
+- **Deadline:** 11:59 PM IST on 19 November (10:29 AM PT).
+- **Repository:** `Joystonm/furnish`, public, initialised 13 November 2026 — inside the
+  12–19 November window. (Renamed from `Joystonm/furnish-verified` on 16 November; the
+  working copy is `F:\Argon`. `Joystonm/Argon` was created 15 October and is therefore
+  **outside** the window, so it is not the submission repo.)
 - **Submission form:** <https://www.surveymonkey.com/r/kane-cli-hackathon-submission>
 
 ---
@@ -137,7 +138,7 @@ that has not been made public yet.
 
 | Requirement | Status |
 |---|---|
-| Public GitHub repo, initialised on/after 12 November | ✅ `Joystonm/furnish-verified`, created 13 Nov 2026, public |
+| Public GitHub repo, initialised on/after 12 November | ✅ `Joystonm/furnish`, created 13 Nov 2026, public |
 | Setup instructions in the README | ✅ [`README.md`](README.md) |
 | Kane CLI used, at least one run | ✅ twenty runs recorded in the app's ledger — ten passed, ten failed |
 | Explanation: app, coding agent, Kane's role | ✅ §1 above |
@@ -147,17 +148,18 @@ that has not been made public yet.
 | Credentials for any login/paid service | ✅ none — no login, no paid service, no API key |
 | Recorded-run / backup-deployment fallback | ✅ twenty-three sealed evidence packs — one for each of the twenty runs in the ledger, plus three from runs that were made and not recorded — each with its own `run.yaml`, `result.yaml`, step records and screenshots; and the run's own `Result.md` under `.testmuai/tests/output-*/` for every flow |
 | TestMu AI account, same email for credit claim | ✅ the account used for the runs |
-| Repo pushed before 11:59 PM IST, 19 Nov | ✅ pushed — `Joystonm/furnish-verified`, `main`; further commits are local only (see §5) |
+| Repo pushed before 11:59 PM IST, 19 Nov | ✅ pushed — `Joystonm/furnish`, `main`, matching the local working copy |
 
 ### Where the repo stands
 
-`Joystonm/furnish-verified` is public and its `main` is pushed — it is at `a2dd15b`.
-The working copy lives in `F:\Argon` (the old `furnish-verified` folder was deleted and
-its work moved here, per your instruction), and `F:\Argon`'s `origin` still points at
-`Joystonm/Argon`, which was created 15 October and is therefore ineligible. The
-eligible repo's `main` is behind the local `main` — `53b9deb`, `6f83563`, `11d904f`,
-`0572154`, `fb815f1`, `cfde144` and whatever this document's own commit makes it —
-so pushing it is a fast-forward and rewrites nothing.
+`Joystonm/furnish` is public and its `main` is pushed, at the same commit as the
+local `main`. It was renamed from `Joystonm/furnish-verified` on 16 November, so it
+carries the name it was asked for; GitHub keeps a redirect from the old URL, so
+nothing that links to the old name breaks. The working copy lives in `F:\Argon`
+(the old `furnish-verified` folder was deleted and its work moved here, per your
+instruction), and `F:\Argon`'s `origin` now points at `Joystonm/furnish`, so a
+plain `git push` goes to the submission repo. `Joystonm/Argon` was created
+15 October, is therefore ineligible, and is no longer a remote.
 
 ### The loops, in one table
 
@@ -183,7 +185,7 @@ labelled as that — it is not a defect in the product.
 
 ## 5. What is left, and who has to do it
 
-Three things need your account or your word. None of them can be done from here.
+Two things need your account. Neither can be done from here.
 
 **1. Upload the video.** The file is `F:\demo-build\furnish-demo.mp4` (4:50, 23 MB).
 Upload it to YouTube — unlisted is enough, public is better — and put the link in
@@ -194,16 +196,8 @@ Upload it to YouTube — unlisted is enough, public is better — and put the li
 `[repo link]` filled in. Two platforms is the minimum (Hacker News and Reddit for the
 technical one, X or LinkedIn for the short one).
 
-**3. Push the remaining commits.** The local `main` is ahead of the eligible repo's
-`main`, and the working tree is clean — the assistant transcript store the recorded
-video shows working is one of those commits. From `F:\Argon`:
-
-```bash
-git push https://github.com/Joystonm/furnish-verified.git main
-```
-
-Nothing has been pushed since you said *"No pushes after this."* — the command is
-here for you to run, and it is a fast-forward, so it will not rewrite anything.
+**Done — the repository.** <https://github.com/Joystonm/furnish> is public, `main`
+is at `d000a6b`, and the local working copy is at the same commit.
 
 **Blocked, and it will not unblock itself:** the Kane CLI credit balance is at
 **−4.8781**, so no further Kane run can be made on this account until credits are
