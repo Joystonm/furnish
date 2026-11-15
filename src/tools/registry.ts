@@ -21,13 +21,15 @@
  */
 import { CATALOG, KIND_LABEL } from '../model/catalog.ts';
 import { DEFAULT_MATERIALS } from '../model/catalog.ts';
+import { catalogById } from '../model/catalog.ts';
 import { formatArea, formatLength, wallLength } from '../model/geometry.ts';
 import { measureBuilding, measureRoom } from '../model/measure.ts';
+import { findFreeSpot } from '../model/plan.ts';
 import { errorsOnly, validate } from '../model/validate.ts';
 import { DESIGN_STYLES, STYLE_BLURB, STYLE_LABEL, paletteFor } from '../model/palette.ts';
 import { buildScene } from '../three/sceneModel.ts';
 import { useProject, type OperationName } from '../store/useProject.ts';
-import type { DesignStyle, Issue, Project } from '../model/types.ts';
+import type { DesignStyle, Issue, Project, Room } from '../model/types.ts';
 import type { ResizeRoomInput } from '../model/ops.ts';
 
 export type Permission = 'read' | 'write' | 'destructive';
@@ -134,6 +136,107 @@ function envelope(extra: Record<string, unknown> = {}): Record<string, unknown> 
 }
 
 const ROOM_SUMMARY: JsonSchema = { type: 'object', properties: { id: { type: 'string' }, label: { type: 'string' }, kind: { type: 'string' }, area: { type: 'number' }, x: { type: 'number' }, y: { type: 'number' }, width: { type: 'number' }, depth: { type: 'number' } } };
+
+/**
+ * Turn what a person said into a real catalogue id.
+ *
+ * The model is told to use catalogue ids, and mostly does. But "a sofa" is a
+ * thing people say, and refusing to place one because the model wrote "sofa"
+ * instead of "sofa-3" is pedantry in the wrong place.
+ *
+ * So a friendly name is resolved to a REAL id — never invented. Exact id
+ * first, then an exact label, then a name that appears inside a label. When
+ * several labels contain it ("sofa" is inside three of them) the plainest
+ * wins: the shortest label, and the catalogue's own order to break a tie.
+ * Whatever is chosen, the reply names the item that was actually placed, so
+ * the user is never told about a sofa they did not get.
+ */
+function resolveCatalogId(raw: string): { id: string; label: string } | { error: string; hint: string } {
+  const q = raw.trim().toLowerCase();
+  if (!q) return { error: 'No catalogue item was named.', hint: 'Call list_catalog for the ids.' };
+  const exact = catalogById.get(q);
+  if (exact) return { id: exact.id, label: exact.label };
+  const byLabel = CATALOG.filter((c) => c.label.toLowerCase() === q);
+  if (byLabel.length === 1) return { id: byLabel[0].id, label: byLabel[0].label };
+  const contains = CATALOG.filter(
+    (c) => c.label.toLowerCase().includes(q) || c.id.toLowerCase().startsWith(q) || q.startsWith(c.id.toLowerCase()),
+  );
+  if (contains.length === 1) return { id: contains[0].id, label: contains[0].label };
+  if (contains.length > 1) {
+    const best = [...contains].sort((a, b) => a.label.length - b.label.length)[0]!;
+    return { id: best.id, label: best.label };
+  }
+  return {
+    error: `No catalogue item called "${raw}".`,
+    hint: `Call list_catalog for the valid ids. Close names: ${CATALOG.slice(0, 6).map((c) => c.id).join(', ')}.`,
+  };
+}
+
+/**
+ * Which items of the same kind the room can actually take.
+ *
+ * This is the app answering a question the model cannot: "the room is full of
+ * sofas — is there one that fits?" The answer is found by asking the same
+ * question the placement asks, item by item, and keeping the ones with a clear
+ * spot.
+ *
+ * They come back biggest first. The person asked for a sofa, so the useful
+ * answer is the largest sofa the room can take — not the smallest chair in the
+ * catalogue, which technically fits and answers a question nobody asked.
+ */
+function alternativesThatFit(
+  p: Project,
+  room: Room,
+  category: string,
+  excludeId: string,
+): { id: string; label: string; width: number; depth: number }[] {
+  const pool = CATALOG.filter((c) => c.category === category && c.id !== excludeId).sort(
+    (a, b) => b.width * b.depth - a.width * a.depth,
+  );
+  const out: { id: string; label: string; width: number; depth: number }[] = [];
+  for (const c of pool) {
+    if (!findFreeSpot(p, room, c.id, 0)) continue;
+    out.push({ id: c.id, label: c.label, width: c.width, depth: c.depth });
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+
+/**
+ * Find the room the user meant.
+ *
+ * A room can be named three ways: by its id (which the model has been shown),
+ * by its label ("Living room"), or by the kind of room it is ("bedroom"). All
+ * three resolve here, and the search is over the ACTIVE floor — a plan has two
+ * storeys, and "the bedroom" on the ground floor is not the bedroom upstairs.
+ */
+function resolveRoom(floorId: string, roomId: string, named: string): Room | null {
+  const p = project();
+  const onFloor = p.rooms.filter((r) => r.floorId === floorId);
+  const pool = onFloor.length ? onFloor : p.rooms;
+
+  if (roomId) {
+    const byId = p.rooms.find((r) => r.id === roomId);
+    if (byId) return byId;
+  }
+  if (named) {
+    const q = named.trim().toLowerCase();
+    const exact = pool.find((r) => r.label.toLowerCase() === q);
+    if (exact) return exact;
+    const byKind = pool.find((r) => (KIND_LABEL[r.kind] ?? '').toLowerCase() === q);
+    if (byKind) return byKind;
+    const contains = pool.filter((r) => r.label.toLowerCase().includes(q) || q.includes(r.label.toLowerCase()));
+    if (contains.length === 1) return contains[0]!;
+    if (contains.length > 1) return contains[0]!;
+  }
+  const selected = useProject.getState().activeRoomId;
+  if (selected) {
+    const room = p.rooms.find((r) => r.id === selected);
+    if (room) return room;
+  }
+  return null;
+}
+
 
 /* ─────────────────────────────────────────────────────────────── the tools ───── */
 
@@ -444,20 +547,81 @@ export const TOOLS: ToolSpec[] = [
   {
     name: 'add_furniture',
     title: 'Add a piece of furniture',
-    description: 'Place a catalogue item by id, at a centre point in metres. Use list_catalog for valid ids. The item must fit inside the room it lands in.',
+    description:
+      'Place a catalogue item in a room. Give the catalogue id (list_catalog has them all) and the room — by id, or by name such as "Living room". Furnish finds a clear spot for it: inside the room, clear of the furniture already there, clear of every door swing and of the floor in front of every door. You do NOT need to work out coordinates, and you must not guess them — leave x and y out and the app will find the position.',
     permission: 'write',
     input: {
       type: 'object',
-      properties: { catalogId: { type: 'string', description: 'A catalogue id, e.g. bed-double or sofa-3' }, x: { type: 'number' }, y: { type: 'number' }, roomId: { type: 'string' }, rotation: { type: 'number' }, color: { type: 'string' } },
-      required: ['catalogId', 'x', 'y'],
+      properties: {
+        catalogId: { type: 'string', description: 'A catalogue id, e.g. bed-double or sofa-3' },
+        room: { type: 'string', description: 'The room to put it in, by name: "Living room", "Bedroom 2". Use roomId if you have the id.' },
+        roomId: { type: 'string', description: 'The room id, if you know it.' },
+        x: { type: 'number', description: 'Optional. The centre point in metres. Omit it and Furnish finds a clear spot.' },
+        y: { type: 'number', description: 'Optional. The centre point in metres. Omit it and Furnish finds a clear spot.' },
+        rotation: { type: 'number' },
+        color: { type: 'string' },
+      },
+      required: ['catalogId'],
     },
-    output: { type: 'object', properties: { id: { type: 'string' }, label: { type: 'string' } } },
-    handler: (input) =>
-      apply(
+    output: { type: 'object', properties: { id: { type: 'string' }, label: { type: 'string' }, room: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' } } },
+    handler: (input) => {
+      const p = project();
+      const floorId = activeFloorId();
+
+      const cat = resolveCatalogId(str(input.catalogId));
+      if ('error' in cat) return bad(cat.error, cat.hint);
+
+      const room = resolveRoom(floorId, str(input.roomId), str(input.room));
+      if (!room) {
+        const rooms = p.rooms.filter((r) => r.floorId === floorId).map((r) => r.label);
+        return bad(
+          'No room was named, and no room is selected.',
+          `Name the room (for example "Living room") or give its id. Rooms on this floor: ${rooms.join(', ') || 'none'}.`,
+        );
+      }
+
+      const rotation = num(input.rotation) || 0;
+      const hasX = typeof input.x === 'number' && Number.isFinite(input.x);
+      const hasY = typeof input.y === 'number' && Number.isFinite(input.y);
+
+      let x: number;
+      let y: number;
+      let turn = rotation;
+      if (hasX && hasY) {
+        x = num(input.x);
+        y = num(input.y);
+      } else {
+        const spot = findFreeSpot(p, room, cat.id, rotation);
+        if (!spot) {
+          const entry = catalogById.get(cat.id)!;
+          // A refusal that only says "no" is a dead end: the model is told the
+          // item does not fit and has no way to find out what does. The app
+          // knows — it can ask the same question about every other item in the
+          // same category and see which one the room has room for. So the
+          // refusal names one, and the assistant can place that instead.
+          const fits = alternativesThatFit(p, room, entry.category, cat.id);
+          const hint = fits.length
+            ? `The ${fits[0].label} (${fits[0].width.toFixed(2)} m × ${fits[0].depth.toFixed(2)} m) does fit in ${room.label} — call add_furniture with catalogId "${fits[0].id}" and room "${room.label}" instead.`
+            : 'Pick a different room, or a smaller item.';
+          return bad(
+            `There is no clear space in ${room.label} for a ${entry.label} (${entry.width.toFixed(2)} m × ${entry.depth.toFixed(2)} m).`,
+            hint,
+          );
+        }
+        x = spot.x;
+        y = spot.y;
+        turn = spot.rotation;
+      }
+
+      return apply(
         'addFurniture',
-        [{ floorId: activeFloorId(), roomId: str(input.roomId) || undefined, catalogId: str(input.catalogId), x: num(input.x), y: num(input.y), rotation: num(input.rotation) || undefined, color: str(input.color) || undefined }],
-        (d) => `Placed ${(d as { label: string }).label} as ${(d as { id: string }).id}.`,
-      ),
+        [{ floorId: room.floorId, roomId: room.id, catalogId: cat.id, x, y, rotation: turn || undefined, color: str(input.color) || undefined }],
+        (d) => {
+          const item = d as { id: string; label: string; x: number; y: number };
+          return `Placed ${item.label} in ${room.label} at ${item.x.toFixed(2)}, ${item.y.toFixed(2)} (id ${item.id}).`;
+        },
+      );
+    },
   },
 
   {
@@ -688,14 +852,28 @@ export const TOOLS: ToolSpec[] = [
   {
     name: 'list_catalog',
     title: 'List furniture catalogue',
-    description: 'Every catalogue item with its id and real footprint in metres. Use these ids for add_furniture and move_furniture.',
+    description: 'Every catalogue item with its id and real footprint in metres. Use these ids for add_furniture and move_furniture. Narrow it with a category if you want: seating, sleeping, storage, table, kitchen, bath, appliance, decor.',
     permission: 'read',
     input: { type: 'object', properties: { category: { type: 'string' } } },
     output: { type: 'object', properties: { items: { type: 'array' } } },
     handler: (input) => {
       const category = str(input.category);
-      const items = (category ? CATALOG.filter((c) => c.category === category) : CATALOG).map((c) => ({ id: c.id, label: c.label, width: c.width, depth: c.depth, height: c.height, category: c.category }));
-      return { ok: true, summary: `${items.length} items: ${items.map((i) => `${i.id} (${i.width}×${i.depth}m)`).join('; ')}`, data: { items } };
+      const asked = category ? CATALOG.filter((c) => c.category === category) : CATALOG;
+      // A filter that matches nothing used to answer "0 items" — and that is the
+      // one answer the model cannot do anything with. It asked for "sofas", the
+      // catalogue calls them "seating", and the turn ended with nothing placed
+      // and no way to find out why. So a filter that matches nothing returns
+      // the whole catalogue, with the real category names spelled out, and the
+      // model can place the sofa it wanted on the next round.
+      const items = (asked.length ? asked : CATALOG).map((c) => ({ id: c.id, label: c.label, width: c.width, depth: c.depth, height: c.height, category: c.category }));
+      const categories = [...new Set(CATALOG.map((c) => c.category))];
+      const note = asked.length
+        ? ''
+        : ` Nothing is filed under "${category}" — showing every item instead.`;
+      const head = asked.length
+        ? `${items.length} items:`
+        : `${items.length} items (categories: ${categories.join(', ')}):`;
+      return { ok: true, summary: `${head} ${items.map((i) => `${i.id} (${i.width}×${i.depth}m)`).join('; ')}.${note}`, data: { items } };
     },
   },
 

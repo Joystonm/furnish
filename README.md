@@ -16,6 +16,18 @@ that both the 2D plan and the 3D building are derived from.
 
 ---
 
+## Watch the demo
+
+▶ **[Furnish Verified — a floor plan, and a receipt for it](<YOUTUBE-LINK>)** —
+4 min 50 s.
+
+The app end to end — brief, plan, the assistant refusing a sofa that does not fit and
+placing the one that does, the building in 3D, the checks — and then the Kane CLI runs
+that hold it to account: the audit that failed, the same audit re-run and passing, and
+the Ledger tab that keeps both with their commits, their costs and their evidence.
+
+---
+
 ## Quick start
 
 Requires **Node 22.16 or newer** (the production server runs TypeScript

@@ -30,7 +30,7 @@
  * the brief's own defaults and says, in a warning toast that is styled like
  * neither success nor error, that no model planned the result.
  */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useProject } from '../store/useProject.ts';
 import { emptyFromBrief, generateFromBrief, gridFromBrief } from '../model/layout.ts';
 import { requestRoomProgram } from '../ai/planProgram.ts';
@@ -118,10 +118,29 @@ export function Onboarding({ onDone }: { onDone(): void }) {
   // list is the reuse above; its plot deliberately is not.
   const [brief, setBrief] = useState<DesignBrief>(() => initialBrief(project.brief));
   const [planning, setPlanning] = useState(false);
+  /**
+   * The refusal, said in the place the user is already looking.
+   *
+   * It used to be a toast, and a toast is the wrong place for it: this screen
+   * is a full-screen dialog, so the toast was painted underneath the scrim and
+   * the app refused the plan in silence. Lifting the toast above the scrim
+   * fixed the visibility and left the message sitting on top of the very
+   * buttons the user is about to press.
+   *
+   * So the refusal is told here, in the dialog, in the same red as the other
+   * things this screen says are wrong with the brief. Changing any answer
+   * clears it, because the answer has changed and the sentence no longer
+   * describes it.
+   */
+  const [refusal, setRefusal] = useState<string | null>(null);
   // A ref, not the `planning` state, guards the button: state does not update
   // until the render commits, so a fast double click would still fire two
   // requests and replace the project twice.
   const inFlight = useRef(false);
+
+  useEffect(() => {
+    setRefusal(null);
+  }, [brief]);
 
   const patch = (p: Partial<DesignBrief>) => setBrief((b) => ({ ...b, ...p }));
   const sb = brief.plot.setbacks;
@@ -166,7 +185,10 @@ export function Onboarding({ onDone }: { onDone(): void }) {
         : { reason: outcome.reason },
     });
     if (!res.ok) {
-      store.toast('error', res.error);
+      // Said here rather than toasted: this is a full-screen dialog, so a
+      // toast lands under the scrim or on top of the buttons, and a refusal
+      // nobody can read is not a refusal.
+      setRefusal(res.error);
       return;
     }
     store.replace(res.data.project, 'Generate from brief');
@@ -196,7 +218,12 @@ export function Onboarding({ onDone }: { onDone(): void }) {
       ? `MiniMax planned it: ${outcome.summary}`
       : `MiniMax planned ${outcome.program.rooms.length} rooms`;
     store.toast(
-      warnings.length ? 'info' : 'success',
+      // `warning` when the model left something out: the plan is good, but it
+      // is not what the reader will assume, and the message says so at length.
+      // A three-second `info` toast cannot be read — the model's summary and
+      // the list of connections it could not make is a paragraph, and it was
+      // on screen for less time than it takes to read one sentence of it.
+      warnings.length ? 'warning' : 'success',
       warnings.length
         ? `${what}. ${warnings[0]}${warnings.length > 1 ? ` (+${warnings.length - 1} more)` : ''} See the Checks panel.`
         : `${what}. ${roomCount} rooms on ${storeys} — drag anything you want to change.`,
@@ -215,7 +242,10 @@ export function Onboarding({ onDone }: { onDone(): void }) {
     const store = useProject.getState();
     const res = gridFromBrief(project, brief);
     if (!res.ok) {
-      store.toast('error', res.error);
+      // Said here rather than toasted: this is a full-screen dialog, so a
+      // toast lands under the scrim or on top of the buttons, and a refusal
+      // nobody can read is not a refusal.
+      setRefusal(res.error);
       return;
     }
     store.replace(res.data.project, 'Start from a room grid');
@@ -244,7 +274,10 @@ export function Onboarding({ onDone }: { onDone(): void }) {
     const store = useProject.getState();
     const res = sampleProject();
     if (!res.ok) {
-      store.toast('error', res.error);
+      // Said here rather than toasted: this is a full-screen dialog, so a
+      // toast lands under the scrim or on top of the buttons, and a refusal
+      // nobody can read is not a refusal.
+      setRefusal(res.error);
       return;
     }
     store.replace(res.data.project, 'Load the sample plan');
@@ -266,7 +299,10 @@ export function Onboarding({ onDone }: { onDone(): void }) {
     const store = useProject.getState();
     const res = emptyFromBrief(project, brief);
     if (!res.ok) {
-      store.toast('error', res.error);
+      // Said here rather than toasted: this is a full-screen dialog, so a
+      // toast lands under the scrim or on top of the buttons, and a refusal
+      // nobody can read is not a refusal.
+      setRefusal(res.error);
       return;
     }
     const floors = res.data.floorCount;
@@ -339,7 +375,9 @@ export function Onboarding({ onDone }: { onDone(): void }) {
               </p>
               {tight && (
                 <p className="mt-1.5 text-[11px] leading-snug text-danger">
-                  The setbacks leave almost nothing. Set them to zero below.
+                  {buildableW <= 0 || buildableD <= 0
+                    ? 'The setbacks are bigger than the plot. Nothing is left to build on.'
+                    : `The setbacks leave only ${buildableW.toFixed(1)} × ${buildableD.toFixed(1)} m to build on.`}
                 </p>
               )}
             </section>
@@ -404,6 +442,18 @@ export function Onboarding({ onDone }: { onDone(): void }) {
             used to share this row with the buttons, which made the busiest part
             of the screen the least confident. */}
         <footer className="shrink-0 border-t border-line bg-surface px-6 py-4">
+          {refusal && (
+            // The refusal lives here, above the buttons it is refusing to
+            // press, in the same red as every other thing this screen says is
+            // wrong with the brief.
+            <p
+              className="mb-3 flex items-start gap-2 rounded-control border border-danger/25 bg-danger/[0.06] px-3 py-2 text-[12px] leading-snug text-danger"
+              data-testid="wizard-refusal"
+              role="alert"
+            >
+              {refusal}
+            </p>
+          )}
           <p className="hint mb-3 leading-relaxed">
             MiniMax picks which rooms this house has and how big they are; Furnish draws every line with deterministic layout code,
             and the model is never given a coordinate. With no model the plan still generates from catalogue sizes, and the app

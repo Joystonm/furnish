@@ -571,6 +571,67 @@ describe('runAssistantTurn — applying a plan', () => {
   });
 });
 
+/**
+ * A step that fails does not always end the turn.
+ *
+ * "Put a sofa in the living room" fails when the room is too small for the
+ * sofa the model picked — but the app knows which sofa DOES fit, and the
+ * refusal says so. An assistant that stops there has turned a solvable
+ * request into a failure; one that reads the hint and places the sofa that
+ * fits has done what the person asked, as closely as the room allows.
+ *
+ * The turn must also stay honest: the failed attempt is still in the report,
+ * and the reply says what actually happened.
+ */
+describe('runAssistantTurn — recovering from a failed step', () => {
+  it('gives the model one round to answer the failure, and applies what it does', async () => {
+    const p = seed();
+    // A 2 × 2 m living room: an L-shaped sofa cannot go in it, a two-seat
+    // sofa can.
+    const room = useProject.getState().run('createRoom', [{ floorId: p.floors[0]!.id, kind: 'living', x: 2, y: 2, width: 2, depth: 2 }]);
+    if (!room.ok) throw new Error(room.error);
+
+    const seen: ChatMessage[] = [];
+    const client = scriptedClient(
+      [
+        planJson('Put a sofa in the living room', [{ tool: 'add_furniture', input: { catalogId: 'sofa-l', room: 'Living room' } }]),
+        planJson('Put a smaller sofa in the living room', [{ tool: 'add_furniture', input: { catalogId: 'sofa-2', room: 'Living room' } }]),
+        planJson('Done', [{ reply: 'The L-shaped sofa would not fit, so I placed the two-seat sofa instead.' }]),
+      ],
+      seen,
+    );
+    const report = await runAssistantTurn('put an L-shaped sofa in the living room', { client, maxIterations: 4, stepDelayMs: 0 });
+
+    // The refusal reached the model, with the item that does fit named in it.
+    expect(seen.map((m) => m.content).join('\n')).toMatch(/does fit in Living room/);
+    // The turn carried on: one failed step, then one that worked.
+    expect(report.steps.map((s) => s.status)).toContain('failed');
+    expect(report.steps.map((s) => s.status)).toContain('applied');
+    expect(useProject.getState().project.furniture).toHaveLength(1);
+    expect(useProject.getState().project.furniture[0]!.catalogId).toBe('sofa-2');
+    expect(report.ok).toBe(true);
+  });
+
+  it('does not retry when the plan had more steps that depended on the failed one', async () => {
+    const p = seed();
+    const room = useProject.getState().run('createRoom', [{ floorId: p.floors[0]!.id, kind: 'living', x: 2, y: 2, width: 2, depth: 2 }]);
+    if (!room.ok) throw new Error(room.error);
+
+    const client = scriptedClient([
+      planJson('Put a sofa in the living room', [
+        { tool: 'add_furniture', input: { catalogId: 'sofa-l', room: 'Living room' } },
+        { tool: 'create_room', input: { floorId: p.floors[0]!.id, kind: 'bedroom', x: 7, y: 2, width: 3, depth: 3 } },
+      ]),
+    ]);
+    const report = await runAssistantTurn('put an L-shaped sofa in the living room', { client, maxIterations: 4, stepDelayMs: 0 });
+
+    expect(report.ok).toBe(false);
+    expect(useProject.getState().project.furniture).toHaveLength(0);
+    // The second step was not applied against a state the model did not expect.
+    expect(useProject.getState().project.rooms).toHaveLength(1);
+  });
+});
+
 describe('runAssistantTurn — approval for destructive steps', () => {
   it('does not delete anything when approval is not granted', async () => {
     const p = seed();
@@ -879,6 +940,82 @@ describe('runAssistantTurn — a design request answered in words', () => {
 
   it('tells the model in the system prompt that prose is not a design', () => {
     expect(systemPrompt()).toMatch(/you MUST call the tools/);
+  });
+});
+
+/* ───────────────────────────── reading the plan is not changing it ───────────── */
+
+/**
+ * The failure these cover: the model inspects and measures, the tools all
+ * succeed, and the app says "Done — 5 changes applied" about a drawing that
+ * has not moved. The operations ran; they just did not change anything, and
+ * the reply has to say which of the two happened.
+ */
+describe('runAssistantTurn — reading the plan is not changing it', () => {
+  it('does not report five inspections as five changes', async () => {
+    seed();
+    const client = scriptedClient([
+      planJson('Look around', [
+        { tool: 'inspect_project', input: {} },
+        { tool: 'list_rooms', input: {} },
+        { tool: 'calculate_building_areas', input: {} },
+        { tool: 'validate_floor_plan', input: {} },
+        { tool: 'get_layout_issues', input: {} },
+      ]),
+    ]);
+
+    const report = await runAssistantTurn('what is the floor area and coverage?', {
+      client,
+      maxIterations: 1,
+    });
+
+    expect(report.ok).toBe(true);
+    expect(report.reply).not.toMatch(/change applied/);
+    expect(report.reply).toMatch(/Nothing on the drawing changed/);
+    // A question is not a design request, so nothing was expected to change.
+    expect(report.changedNothing).toBeFalsy();
+  });
+
+  it('ends the turn when the model comes back with nothing left to do', async () => {
+    const p = seed();
+    const client = scriptedClient([
+      planJson('Add a room', [
+        { tool: 'create_room', input: { floorId: p.floors[0]!.id, kind: 'living', x: 2, y: 2, width: 6, depth: 4 } },
+      ]),
+      // An empty plan after the work is done is the model saying it has
+      // finished, not a malformed answer that should throw the work away.
+      planJson('Finished', []),
+    ]);
+
+    const report = await runAssistantTurn('add a living room', { client, stepDelayMs: 0 });
+
+    expect(report.ok).toBe(true);
+    expect(report.error).toBeUndefined();
+    expect(report.reply).toMatch(/1 change applied/);
+    expect(useProject.getState().project.rooms).toHaveLength(1);
+  });
+
+  it('shows the model\'s own words and the app\'s accounting of what it did', async () => {
+    const p = seed();
+    const client = scriptedClient([
+      planJson('Add a room', [
+        { tool: 'create_room', input: { floorId: p.floors[0]!.id, kind: 'living', x: 2, y: 2, width: 6, depth: 4 } },
+      ]),
+      planJson('Finished', [{ reply: 'Added the living room.' }]),
+    ]);
+
+    const report = await runAssistantTurn('add a living room', { client, stepDelayMs: 0 });
+
+    // The model says what it thinks it did; the app says what it can prove.
+    expect(report.reply).toMatch(/Added the living room\./);
+    expect(report.reply).toMatch(/1 change applied/);
+  });
+
+  it('tells the model how to finish a turn', () => {
+    // Without this the model has no way to stop: the old rule said a turn is
+    // answered with tool steps, so it kept calling tools until the budget ran
+    // out and the app had to say it was cut off.
+    expect(systemPrompt()).toMatch(/finish the turn/i);
   });
 });
 

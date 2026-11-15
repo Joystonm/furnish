@@ -9,10 +9,11 @@
  * What the panel shows is the *result*, not the model's account of the result:
  * a step is marked applied only when the operation behind it returned success.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useProject } from '../store/useProject.ts';
-import { aiHealth, runAssistantTurn, type StepReport, type TurnReport } from './orchestrator.ts';
+import { aiHealth, runAssistantTurn, type StepReport } from './orchestrator.ts';
 import type { PlanStep } from './orchestrator.ts';
+import { getTurns, setTurns, subscribeTurns, type Turn } from './transcript.ts';
 import { formatArea } from '../model/geometry.ts';
 import { TOOLS_BY_NAME } from '../tools/registry.ts';
 
@@ -23,20 +24,12 @@ const SUGGESTIONS = [
   'What is the floor area and coverage?',
 ];
 
-interface Turn {
-  id: number;
-  request: string;
-  report: TurnReport | null;
-  /** Steps as they resolve, so the work is visible before the turn is over. */
-  liveSteps: StepReport[];
-  pending: boolean;
-  progress: string;
-}
-
 let turnCounter = 0;
 
 export function AssistantPanel({ onClose }: { onClose(): void }) {
-  const [turns, setTurns] = useState<Turn[]>([]);
+  /* The transcript lives outside the panel, so a remount of the studio shell
+   * cannot wipe the answer the user is reading. See ./transcript.ts. */
+  const turns = useSyncExternalStore(subscribeTurns, getTurns);
   const [draft, setDraft] = useState('');
   const [health, setHealth] = useState<{ aiEnabled: boolean; model: string | null; endpoint: string | null; disabledByConfig: boolean } | null>(null);
   const abortRef = useRef<AbortController | null>(null);

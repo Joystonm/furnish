@@ -84,6 +84,24 @@ const MAX_ROOM_M2 = 90;
 const HAZARD_RATIO = 0.82;
 
 /**
+ * The point below which rooms are scaled so far that they are no longer rooms.
+ *
+ * The packer treats a room's area as a *share* of the box it is given, not as
+ * a size: the rooms are scaled to fit whatever envelope they land in. A
+ * programme that asks for a little more than the envelope holds therefore
+ * comes out a little smaller than asked — it does not produce overlapping
+ * rooms, because there is nothing to overlap. `generateFromBrief` already
+ * draws that line, at this number, and warns when it has had to scale below
+ * it.
+ *
+ * So the line between "a little smaller than asked" and "not a plan at all"
+ * belongs here too, in the same place. Refusing every overshoot threw away
+ * good plans over a square metre: on 2026-11-15 the model asked for 217 m² in
+ * an envelope of 216 and the whole programme was dropped for one.
+ */
+const SCALE_FLOOR = 0.7;
+
+/**
  * Rooms that are drawn by the generator rather than asked for.
  *
  * The band structure in `generateFromBrief` places a corridor across the full
@@ -96,11 +114,16 @@ const GENERATOR_OWNED = new Set<RoomKind>(['corridor']);
 /**
  * Check a program against the plot it has to fit.
  *
- * This runs before anything is drawn, on purpose. A program that asks for more
- * floor than the envelope holds is not a layout the packer can rescue by
- * scaling — the packer fills whatever box it is given, so an over-large program
- * produces genuinely overlapping rooms, not slightly small ones. Refusing it
- * here and falling back is honest; drawing a broken plan is not.
+ * This runs before anything is drawn, on purpose. A program is checked against
+ * the envelope twice: once for the size of the rooms it asked for, and once for
+ * the things it must not do — put a room on a storey that does not exist, or
+ * leave a room too small to use.
+ *
+ * The size check has a tolerance, and the tolerance is the point. The packer
+ * scales a program's rooms into the envelope, so a program that asks for a
+ * little too much comes out a little smaller than asked rather than broken.
+ * Only a program that would have to be scaled past `SCALE_FLOOR` is refused,
+ * because at that point the rooms are no longer the rooms that were asked for.
  */
 export function reviewProgram(program: RoomProgram, plot: Plot, floorCount: number): ProgramReview {
   const warnings: string[] = [];
@@ -127,9 +150,20 @@ export function reviewProgram(program: RoomProgram, plot: Plot, floorCount: numb
   }
 
   if (requestedM2 > availableM2) {
+    // Not a refusal: the packer scales. What is refused is a programme so far
+    // over the envelope that the rooms would come out as a fraction of what
+    // was asked for — see `SCALE_FLOOR`.
+    warnings.push(
+      `The rooms it planned come to ${requestedM2.toFixed(0)} m², more than the ${availableM2.toFixed(0)} m² the envelope holds once circulation is taken out, so they came out a little smaller than asked.`,
+    );
+  }
+
+  const ceilingM2 = (envW * envD * floors) / SCALE_FLOOR;
+  if (requestedM2 > ceilingM2) {
+    const scale = (envW * envD * floors) / requestedM2;
     return {
       ok: false,
-      error: `The rooms it planned come to ${requestedM2.toFixed(0)} m², but the buildable envelope holds about ${availableM2.toFixed(0)} m² across ${floors} storey${floors === 1 ? '' : 's'}. It would not fit, so it was not used.`,
+      error: `The rooms it planned come to ${requestedM2.toFixed(0)} m², but the buildable envelope holds about ${availableM2.toFixed(0)} m² across ${floors} storey${floors === 1 ? '' : 's'} once circulation is taken out — the rooms would have been scaled to ${(scale * 100).toFixed(0)}% of the size asked for. It would not fit, so it was not used.`,
       warnings,
       requestedM2,
       availableM2,
@@ -181,12 +215,73 @@ export function reviewProgram(program: RoomProgram, plot: Plot, floorCount: numb
 }
 
 /**
+ * Room kinds the model asks for that this studio knows under another name.
+ *
+ * The real model asked for a "study" — a perfectly ordinary word for a room
+ * this catalogue calls an office. Throwing away a twelve-room programme
+ * because of one word is a bad trade for the person who asked for the house:
+ * they get a plan nobody wrote instead of the one they did.
+ *
+ * So a named near-miss is repaired, and the repair is reported — the toast
+ * says which room was renamed and to what. A kind with no honest alias is
+ * still a refusal, because guessing would put a room on the plan that nobody
+ * asked for.
+ */
+const KIND_ALIASES: Record<string, RoomKind> = {
+  study: 'office',
+  'home office': 'office',
+  'guest bedroom': 'guest',
+  'guest room': 'guest',
+  'kids bedroom': 'bedroom',
+  'kids room': 'bedroom',
+  'child bedroom': 'bedroom',
+  'master bedroom': 'bedroom',
+  'main bedroom': 'bedroom',
+  'double bedroom': 'bedroom',
+  'single bedroom': 'bedroom',
+  'family room': 'living',
+  'family lounge': 'living',
+  'living area': 'living',
+  'living room': 'living',
+  lounge: 'living',
+  den: 'living',
+  'dining area': 'dining',
+  'dining room': 'dining',
+  kitchenette: 'kitchen',
+  'utility room': 'utility',
+  'laundry room': 'utility',
+  'laundry': 'utility',
+  'wash room': 'utility',
+  ensuite: 'bathroom',
+  'en-suite': 'bathroom',
+  'powder room': 'bathroom',
+  'guest bathroom': 'bathroom',
+  'main bathroom': 'bathroom',
+  wc: 'bathroom',
+  foyer: 'lobby',
+  'entrance hall': 'hall',
+  'entrance foyer': 'lobby',
+  'walk-in closet': 'storage',
+  'walk in wardrobe': 'storage',
+  'cloak room': 'storage',
+  'store room': 'storage',
+  'covered patio': 'terrace',
+  veranda: 'terrace',
+  deck: 'terrace',
+  porch: 'terrace',
+  'car port': 'garage',
+  'double garage': 'garage',
+  'single garage': 'garage',
+};
+
+/**
  * Coerce whatever the model returned into a program, or explain why not.
  *
  * Every field is checked against a closed set. A kind the catalogue does not
  * have is a refusal, not a default: silently turning an invented room kind
  * into "storage" would put a room on the plan that nobody asked for and that
- * the model would then describe as something else.
+ * the model would then describe as something else. A kind with an honest
+ * alias — see `KIND_ALIASES` — is repaired, and the repair is reported.
  */
 export function parseProgram(
   raw: unknown,
@@ -219,10 +314,21 @@ export function parseProgram(
     }
     const r = entry as Record<string, unknown>;
 
-    if (typeof r.kind !== 'string' || !(r.kind in DEFAULT_ROOM_AREA)) {
+    let kind: RoomKind;
+    if (typeof r.kind !== 'string') {
       return { ok: false, error: `"${r.kind as string}" is not a room kind this studio knows.` };
+    } else if (r.kind in DEFAULT_ROOM_AREA) {
+      kind = r.kind as RoomKind;
+    } else {
+      const alias = KIND_ALIASES[r.kind.trim().toLowerCase()];
+      if (!alias) {
+        return { ok: false, error: `"${r.kind}" is not a room kind this studio knows.` };
+      }
+      kind = alias;
+      repairs.push(
+        `The model asked for a "${r.kind}" room. This studio calls that ${(KIND_LABEL[alias] ?? alias).toLowerCase()}, and that is what is on the plan.`,
+      );
     }
-    const kind = r.kind as RoomKind;
 
     let ref = typeof r.ref === 'string' ? r.ref.trim().slice(0, 40) : '';
     if (!ref) {

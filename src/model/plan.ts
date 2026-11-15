@@ -29,7 +29,7 @@ import {
 } from './catalog.ts';
 import { newId } from './ids.ts';
 import { GOING, RISER } from './ops.ts';
-import { TOL, doorSwingPolygon, footprintOfItem, obbOfItem, polygonObbOverlap, rectOf, rectOverlapArea, wallFrame } from './geometry.ts';
+import { TOL, doorSwingPolygon, footprintOfItem, obbOfItem, obbOverlap, polygonObbOverlap, rectOf, rectOverlapArea, round, wallFrame } from './geometry.ts';
 import type { RoomProgram } from './program.ts';
 import type {
   DesignBrief,
@@ -359,6 +359,38 @@ function doorForRooms(kindA: RoomKind, kindB: RoomKind): { kind: Opening['kind']
   return { kind: 'door', spec: OPENING_DEFAULTS.interiorDoor };
 }
 
+/**
+ * The narrowest leaf that still counts as a door, and the jamb it needs.
+ *
+ * A door is a leaf set into a wall, and the wall has to hold the leaf AND the
+ * jamb each side of it. A 0.66 m stretch of partition can hold neither.
+ */
+const DOOR_MIN_LEAF = 0.6;
+const DOOR_JAMB = 0.4;
+
+/**
+ * The widest door a rule allows on a wall this long.
+ *
+ * One function, used both where a door is *chosen* and where it is *placed*, so
+ * the two can never disagree about what a wall can take.
+ *
+ * They did once, and the plan was wrong because of it. A pantry that came out
+ * 0.66 m wide ranked the wall it shared with the corridor above the 3.96 m wall
+ * it shared with the utility — a corridor is always the better way in — so it
+ * claimed the corridor wall. The door was then dropped at placement time for
+ * want of room, and the pantry was left with no door on any wall while the
+ * planner believed it had one. The room it had already claimed was gone, and
+ * the wall it should have taken was never offered to it again.
+ */
+function doorWidthFor(spec: { width: number }, span: number): number {
+  return Math.min(spec.width, span - DOOR_JAMB);
+}
+
+/** Whether a wall this long can hold this rule's door at all. */
+function canHoldDoor(spec: { width: number }, span: number): boolean {
+  return doorWidthFor(spec, span) >= DOOR_MIN_LEAF;
+}
+
 interface DoorCandidate {
   wall: Wall;
   rooms: [Room, Room];
@@ -403,9 +435,15 @@ function chooseDoorPartitions(
   // Open-plan pairs are decided by everyone, not by any one room's budget.
   const contested: DoorCandidate[] = [];
   for (const p of partitions) {
+    const rule = doorForRooms(p.rooms[0].kind, p.rooms[1].kind);
+    if (!rule) continue;
+    // A wall too short to hold a door is not a way into anything, so it is not
+    // offered. Claiming it used to count as a door for both rooms and then be
+    // dropped when the door was placed, which left the room that had claimed
+    // it with no way in at all.
+    if (!canHoldDoor(rule.spec, p.span)) continue;
     if (OPEN_PLAN.has(p.rooms[0].kind) && OPEN_PLAN.has(p.rooms[1].kind)) {
-      const rule = doorForRooms(p.rooms[0].kind, p.rooms[1].kind);
-      if (rule) chosen.set(p.wall.id, rule);
+      chosen.set(p.wall.id, rule);
     } else {
       contested.push(p);
     }
@@ -821,8 +859,8 @@ export function planFloor(opts: PlanOptions): PlannedFloor {
     const rule = doorFor.get(p.wall.id);
     if (!rule) continue;
     const L = p.span;
-    const width = Math.min(rule.spec.width, L - 0.4);
-    if (width < 0.6) continue;
+    const width = doorWidthFor(rule.spec, L);
+    if (width < DOOR_MIN_LEAF) continue;
     p.wall.openings.push({
       id: newId('op'),
       kind: rule.kind,
@@ -966,23 +1004,21 @@ function roomAlongSegment(s: BoundarySegment, rooms: Room[]): Room | undefined {
  * quality, and `push` refuses anything that would not survive the validator, so
  * a cramped room gets fewer pieces rather than a wrong one.
  */
-export function furnishFloor(rooms: Room[], floorId: Id, walls: Wall[] = []): FurnitureItem[] {
-  const out: FurnitureItem[] = [];
-
-  /**
-   * The floor area each door sweeps, keyed by the room it opens into.
-   *
-   * A door is not a hole in a wall, it is a quarter-disc of floor nobody may
-   * put a sofa in. The validator already reports furniture blocking a swing,
-   * but a warning the app generates on its own first load is a warning the
-   * user has to clear before they have touched anything — so the furnisher
-   * keeps clear of the swings it is given rather than parking a bathtub in
-   * one and calling it a starting arrangement.
-   *
-   * The swing belongs to the room on its open side, found by testing the
-   * polygon's centroid: it is inside the hull by construction and always on
-   * the same side of the wall as the leaf.
-   */
+/**
+ * The floor area each door sweeps, keyed by the room it opens into.
+ *
+ * A door is not a hole in a wall, it is a quarter-disc of floor nobody may
+ * put a sofa in. The validator already reports furniture blocking a swing,
+ * but a warning the app generates on its own first load is a warning the
+ * user has to clear before they have touched anything — so the furnisher
+ * keeps clear of the swings it is given rather than parking a bathtub in
+ * one and calling it a starting arrangement.
+ *
+ * The swing belongs to the room on its open side, found by testing the
+ * polygon's centroid: it is inside the hull by construction and always on
+ * the same side of the wall as the leaf.
+ */
+export function doorSwingsByRoom(rooms: Room[], walls: Wall[]): Map<Id, Vec2[][]> {
   const swingsByRoom = new Map<Id, Vec2[][]>();
   for (const w of walls) {
     for (const o of w.openings) {
@@ -999,31 +1035,35 @@ export function furnishFloor(rooms: Room[], floorId: Id, walls: Wall[] = []): Fu
       else swingsByRoom.set(room.id, [poly]);
     }
   }
+  return swingsByRoom;
+}
 
-  /**
-   * The floor a person needs in front of a door, keyed by the room it opens
-   * into.
-   *
-   * A door is three things: a hole in the wall, a leaf that sweeps across it,
-   * and the space a person stands in to come through. The first two are the
-   * swing, and the swing is already kept clear above. The third is not — and
-   * it is the one that matters for a house you can walk through.
-   *
-   * A dining table pushed up against the wall that carries the stair door is
-   * a table in front of a door: the room is split in two by furniture, and
-   * nothing in the plan says so. The strip below is as wide as the opening and
-   * deep enough for somebody to stand and step through, and it is put on both
-   * sides of the wall, because the side the leaf opens into is the side you
-   * come *from* as often as the side you go into.
-   *
-   * Wide cased openings are NOT in this list. A 1.5 m hole between two rooms
-   * is a way through, but it is a way through with a metre of slack on either
-   * side, and furniture against the wall beside it is normal. Treating it as
-   * a doorway took the worktop out of every kitchen that had one, because a
-   * kitchen is a small room with a wide opening in it. Those walls are ranked
-   * last instead, by `wallPenalty`.
-   */
-  const DOOR_APPROACH = 0.7;
+/**
+ * The floor a person needs in front of a door, keyed by the room it opens
+ * into.
+ *
+ * A door is three things: a hole in the wall, a leaf that sweeps across it,
+ * and the space a person stands in to come through. The first two are the
+ * swing, and the swing is already kept clear above. The third is not — and
+ * it is the one that matters for a house you can walk through.
+ *
+ * A dining table pushed up against the wall that carries the stair door is
+ * a table in front of a door: the room is split in two by furniture, and
+ * nothing in the plan says so. The strip below is as wide as the opening and
+ * deep enough for somebody to stand and step through, and it is put on both
+ * sides of the wall, because the side the leaf opens into is the side you
+ * come *from* as often as the side you go into.
+ *
+ * Wide cased openings are NOT in this list. A 1.5 m hole between two rooms
+ * is a way through, but it is a way through with a metre of slack on either
+ * side, and furniture against the wall beside it is normal. Treating it as
+ * a doorway took the worktop out of every kitchen that had one, because a
+ * kitchen is a small room with a wide opening in it. Those walls are ranked
+ * last instead, by `wallPenalty`.
+ */
+const DOOR_APPROACH = 0.7;
+
+export function doorApproachesByRoom(rooms: Room[], walls: Wall[]): Map<Id, Vec2[][]> {
   const approachesByRoom = new Map<Id, Vec2[][]>();
   for (const w of walls) {
     const f = wallFrame(w);
@@ -1055,60 +1095,169 @@ export function furnishFloor(rooms: Room[], floorId: Id, walls: Wall[] = []): Fu
       }
     }
   }
+  return approachesByRoom;
+}
 
-  /**
-   * The usable rectangle inside a room.
-   *
-   * A wall's centreline lies ON the room's edge, not on its inner face, so a
-   * room rectangle is the *structural* outline: half of each bounding wall's
-   * thickness projects into the space. Furniture has to be kept out of that
-   * band or the validator — correctly — reports it as embedded in a wall.
-   */
-  const insetCache = new Map<Id, Rect>();
-  /** The wall of the room that runs along `side`, if the room has one there. */
-  const wallOn = (room: Room, side: Side): Wall | null => {
-    for (const w of walls) {
-      const horiz = Math.abs(w.b.y - w.a.y) < Math.abs(w.b.x - w.a.x);
-      const lo = horiz ? Math.min(w.a.x, w.b.x) : Math.min(w.a.y, w.b.y);
-      const hi = horiz ? Math.max(w.a.x, w.b.x) : Math.max(w.a.y, w.b.y);
-      const edgeLo = horiz ? room.x : room.y;
-      const edgeHi = horiz ? room.x + room.width : room.y + room.depth;
-      if (hi <= edgeLo + TOL.join || lo >= edgeHi - TOL.join) continue;
-      const pos = horiz ? (w.a.y + w.b.y) / 2 : (w.a.x + w.b.x) / 2;
-      const at = side === 'n' ? room.y : side === 's' ? room.y + room.depth : side === 'w' ? room.x : room.x + room.width;
-      if (Math.abs(pos - at) <= TOL.join) return w;
+/** The wall of the room that runs along `side`, if the room has one there. */
+function wallOn(room: Room, walls: Wall[], side: Side): Wall | null {
+  for (const w of walls) {
+    const horiz = Math.abs(w.b.y - w.a.y) < Math.abs(w.b.x - w.a.x);
+    const lo = horiz ? Math.min(w.a.x, w.b.x) : Math.min(w.a.y, w.b.y);
+    const hi = horiz ? Math.max(w.a.x, w.b.x) : Math.max(w.a.y, w.b.y);
+    const edgeLo = horiz ? room.x : room.y;
+    const edgeHi = horiz ? room.x + room.width : room.y + room.depth;
+    if (hi <= edgeLo + TOL.join || lo >= edgeHi - TOL.join) continue;
+    const pos = horiz ? (w.a.y + w.b.y) / 2 : (w.a.x + w.b.x) / 2;
+    const at = side === 'n' ? room.y : side === 's' ? room.y + room.depth : side === 'w' ? room.x : room.x + room.width;
+    if (Math.abs(pos - at) <= TOL.join) return w;
+  }
+  return null;
+}
+
+/**
+ * The usable rectangle inside a room.
+ *
+ * A wall's centreline lies ON the room's edge, not on its inner face, so a
+ * room rectangle is the *structural* outline: half of each bounding wall's
+ * thickness projects into the space. Furniture has to be kept out of that
+ * band or the validator — correctly — reports it as embedded in a wall.
+ */
+export function usableRect(room: Room, walls: Wall[]): Rect {
+  const ins = { n: 0, s: 0, w: 0, e: 0 };
+  for (const w of walls) {
+    const horiz = Math.abs(w.b.y - w.a.y) < Math.abs(w.b.x - w.a.x);
+    const lo = horiz ? Math.min(w.a.x, w.b.x) : Math.min(w.a.y, w.b.y);
+    const hi = horiz ? Math.max(w.a.x, w.b.x) : Math.max(w.a.y, w.b.y);
+    // Does this wall actually run along any part of the room's edge?
+    const edgeLo = horiz ? room.x : room.y;
+    const edgeHi = horiz ? room.x + room.width : room.y + room.depth;
+    if (hi <= edgeLo + TOL.join || lo >= edgeHi - TOL.join) continue;
+    const pos = horiz ? (w.a.y + w.b.y) / 2 : (w.a.x + w.b.x) / 2;
+    const half = w.thickness / 2 + 0.02;
+    if (horiz) {
+      if (Math.abs(pos - room.y) <= TOL.join) ins.n = Math.max(ins.n, half);
+      if (Math.abs(pos - (room.y + room.depth)) <= TOL.join) ins.s = Math.max(ins.s, half);
+    } else {
+      if (Math.abs(pos - room.x) <= TOL.join) ins.w = Math.max(ins.w, half);
+      if (Math.abs(pos - (room.x + room.width)) <= TOL.join) ins.e = Math.max(ins.e, half);
     }
-    return null;
+  }
+  return {
+    x: room.x + ins.w,
+    y: room.y + ins.n,
+    width: Math.max(0, room.width - ins.w - ins.e),
+    depth: Math.max(0, room.depth - ins.n - ins.s),
+  };
+}
+
+/**
+ * Find a clear spot for an item in a room, in metres, at the item's CENTRE.
+ *
+ * The reason this exists is a sentence a person says every day: "put a sofa
+ * in the living room". Answering it needs two things — the right item and a
+ * piece of floor that is free — and the second one is geometry the app already
+ * knows: the room's usable rectangle, the things already in it, and the floor
+ * the doors need to swing onto.
+ *
+ * Asking a language model to work that out is the wrong way round. The model
+ * is told never to do arithmetic, it cannot see where the other furniture is,
+ * and a coordinate it guesses is either wrong or a guess dressed up as a
+ * measurement. So the model says WHICH item and WHICH room, and the app finds
+ * the spot.
+ *
+ * The rules are the furnisher's own: inside the usable rectangle, clear of the
+ * furniture already there (a rug may go under a table, a table may not go
+ * under a rug), out of every door's swing, and out of the floor in front of
+ * every door. A spot that breaks one of them is not a spot.
+ *
+ * The search is a grid over the usable rectangle, and the winner is the clear
+ * candidate CLOSEST TO THE MIDDLE of the room — a piece parked in the corner
+ * reads as an accident, and a piece in the middle reads as placed.
+ *
+ * The search also turns the item. A room that is five metres wide and four
+ * deep cannot take a two-and-a-half metre sofa lying across it, but it can
+ * take the same sofa turned on its side, and a person asking for a sofa does
+ * not care which way round it faces. So the item is tried the way it was asked
+ * for first, and on its side second; the orientation that fits wins, and the
+ * piece is placed at that orientation.
+ */
+export function findFreeSpot(
+  project: Project,
+  room: Room,
+  catalogId: string,
+  rotation = 0,
+): { x: number; y: number; rotation: number } | null {
+  const c = catalogById.get(catalogId);
+  if (!c) return null;
+
+  const walls = project.walls.filter((w) => w.floorId === room.floorId);
+  const items = project.furniture.filter((f) => f.roomId === room.id);
+  const swings = doorSwingsByRoom(project.rooms, walls).get(room.id) ?? [];
+  const approaches = doorApproachesByRoom(project.rooms, walls).get(room.id) ?? [];
+
+  const inner = usableRect(room, walls);
+  const mine = itemBand(catalogId, c.height);
+  const centre = { x: room.x + room.width / 2, y: room.y + room.depth / 2 };
+
+  /** The best clear centre for the item at one orientation, or null. */
+  const bestAt = (turn: number): { x: number; y: number; distance: number } | null => {
+    // The grid searches centres, and the bounds are the room's usable rectangle
+    // inset by half the item's AABB — the axis-aligned box the item occupies at
+    // this orientation, which is what has to fit inside the room.
+    const aabb = footprintOfItem({ x: 0, y: 0, width: c.width, depth: c.depth, rotation: turn });
+    const minX = inner.x + aabb.width / 2;
+    const maxX = inner.x + inner.width - aabb.width / 2;
+    const minY = inner.y + aabb.depth / 2;
+    const maxY = inner.y + inner.depth - aabb.depth / 2;
+    if (minX > maxX || minY > maxY) return null; // it does not fit at this orientation
+
+    /** Is this centre point clear of everything? */
+    const clear = (x: number, y: number): boolean => {
+      const obb = obbOfItem({ x, y, width: c.width, depth: c.depth, rotation: turn });
+      for (const other of items) {
+        if (bandsClear(mine, itemBand(other.catalogId, other.height))) continue;
+        const otherObb = obbOfItem({ x: other.x, y: other.y, width: other.width, depth: other.depth, rotation: other.rotation });
+        if (obbOverlap(obb, otherObb).overlap) return false;
+      }
+      for (const swing of swings) if (polygonObbOverlap(swing, obb)) return false;
+      for (const strip of approaches) if (polygonObbOverlap(strip, obb)) return false;
+      return true;
+    };
+
+    const STEP = 0.1;
+    let best: { x: number; y: number; distance: number } | null = null;
+    for (let x = minX; x <= maxX + 1e-9; x += STEP) {
+      for (let y = minY; y <= maxY + 1e-9; y += STEP) {
+        if (!clear(x, y)) continue;
+        const d = Math.hypot(x - centre.x, y - centre.y);
+        if (!best || d < best.distance) best = { x, y, distance: d };
+      }
+    }
+    return best;
   };
 
+  const asked = ((rotation % 360) + 360) % 360;
+  const onItsSide = (asked + 90) % 360;
+  const first = bestAt(asked);
+  const second = bestAt(onItsSide);
+  // The orientation that was asked for wins ties: turning a sofa to get it
+  // through a gap is a last resort, not a first choice.
+  const winner = first && (!second || first.distance <= second.distance) ? { ...first, rotation: asked } : second ? { ...second, rotation: onItsSide } : null;
+  if (!winner) return null;
+  return { x: round(winner.x, 2), y: round(winner.y, 2), rotation: winner.rotation };
+}
+
+export function furnishFloor(rooms: Room[], floorId: Id, walls: Wall[] = []): FurnitureItem[] {
+  const out: FurnitureItem[] = [];
+
+  const swingsByRoom = doorSwingsByRoom(rooms, walls);
+  const approachesByRoom = doorApproachesByRoom(rooms, walls);
+
+  const insetCache = new Map<Id, Rect>();
   const innerRect = (room: Room): Rect => {
     const cached = insetCache.get(room.id);
     if (cached) return cached;
-    const ins = { n: 0, s: 0, w: 0, e: 0 };
-    for (const w of walls) {
-      const horiz = Math.abs(w.b.y - w.a.y) < Math.abs(w.b.x - w.a.x);
-      const lo = horiz ? Math.min(w.a.x, w.b.x) : Math.min(w.a.y, w.b.y);
-      const hi = horiz ? Math.max(w.a.x, w.b.x) : Math.max(w.a.y, w.b.y);
-      // Does this wall actually run along any part of the room's edge?
-      const edgeLo = horiz ? room.x : room.y;
-      const edgeHi = horiz ? room.x + room.width : room.y + room.depth;
-      if (hi <= edgeLo + TOL.join || lo >= edgeHi - TOL.join) continue;
-      const pos = horiz ? (w.a.y + w.b.y) / 2 : (w.a.x + w.b.x) / 2;
-      const half = w.thickness / 2 + 0.02;
-      if (horiz) {
-        if (Math.abs(pos - room.y) <= TOL.join) ins.n = Math.max(ins.n, half);
-        if (Math.abs(pos - (room.y + room.depth)) <= TOL.join) ins.s = Math.max(ins.s, half);
-      } else {
-        if (Math.abs(pos - room.x) <= TOL.join) ins.w = Math.max(ins.w, half);
-        if (Math.abs(pos - (room.x + room.width)) <= TOL.join) ins.e = Math.max(ins.e, half);
-      }
-    }
-    const box: Rect = {
-      x: room.x + ins.w,
-      y: room.y + ins.n,
-      width: Math.max(0, room.width - ins.w - ins.e),
-      depth: Math.max(0, room.depth - ins.n - ins.s),
-    };
+    const box = usableRect(room, walls);
     insetCache.set(room.id, box);
     return box;
   };
@@ -1260,7 +1409,7 @@ export function furnishFloor(rooms: Room[], floorId: Id, walls: Wall[] = []): Fu
    * dining room instead of the one with the stair door in it.
    */
   const wallPenalty = (room: Room, side: Side, span: number): number => {
-    const w = wallOn(room, side);
+    const w = wallOn(room, walls, side);
     if (!w) return 0;
     const horizontal = side === 'n' || side === 's';
     const centre = horizontal ? room.x + room.width / 2 : room.y + room.depth / 2;

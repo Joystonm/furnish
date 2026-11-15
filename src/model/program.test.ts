@@ -45,6 +45,29 @@ describe('parseProgram', () => {
     expect(res.error).toContain('laundry-crawl');
   });
 
+  /**
+   * A room kind the studio knows under another name.
+   *
+   * The real model asked for a "study" — a normal word for what this
+   * catalogue calls an office. Refusing the whole programme over one word
+   * cost the user the plan the model had actually written, so the kind is
+   * repaired and the repair is reported rather than hidden.
+   */
+  it('repairs a room kind it knows under another name, and says so', () => {
+    const res = parseProgram({ rooms: [room('study-1', 'study', 8), room('living', 'living', 22)] });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.program.rooms[0]!.kind).toBe('office');
+    expect(res.repairs.join(' ')).toMatch(/study/);
+  });
+
+  it('still refuses a kind with no honest alias', () => {
+    const res = parseProgram({ rooms: [room('x', 'cinema', 8)] });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toContain('cinema');
+  });
+
   it('rejects a duplicate ref, which would make adjacency ambiguous', () => {
     const res = parseProgram({ rooms: [room('bed-1', 'bedroom', 12), room('bed-1', 'bedroom', 12)] });
     expect(res.ok).toBe(false);
@@ -222,6 +245,50 @@ describe('reviewProgram against the plot', () => {
     expect(res.ok).toBe(false);
     expect(res.error).toMatch(/would not fit/);
     expect(res.requestedM2).toBeGreaterThan(res.availableM2);
+  });
+
+  /**
+   * A program that asks for a little more than the envelope holds.
+   *
+   * The packer scales a program's rooms into the envelope, so a program that
+   * overshoots comes out smaller than asked rather than broken. Refusing it
+   * throws away a plan the user would have got for free: on 2026-11-15 the
+   * model asked for 217 m² in an envelope of 216, and the whole programme was
+   * dropped for one square metre.
+   */
+  it('accepts a program that overshoots the envelope a little, and says the rooms came out smaller', () => {
+    const res = reviewProgram(
+      p(
+        { ref: 'living', kind: 'living', areaM2: 26 },
+        { ref: 'kitchen', kind: 'kitchen', areaM2: 12 },
+        { ref: 'bed-1', kind: 'bedroom', areaM2: 14 },
+        { ref: 'bed-2', kind: 'bedroom', areaM2: 14 },
+        { ref: 'bed-3', kind: 'bedroom', areaM2: 14 },
+        { ref: 'bath-1', kind: 'bathroom', areaM2: 5 },
+        { ref: 'bath-2', kind: 'bathroom', areaM2: 5 },
+      ),
+      plot(),
+      1,
+    );
+    expect(res.ok).toBe(true);
+    // 90 m² asked for, 81.18 m² available once circulation is taken out.
+    expect(res.requestedM2).toBeGreaterThan(res.availableM2);
+    expect(res.warnings.join(' ')).toMatch(/smaller than asked/);
+  });
+
+  it('still refuses a program that would have to be scaled past the floor', () => {
+    // The other side of the tolerance: far over the envelope is not a house.
+    const res = reviewProgram(
+      p(
+        { ref: 'living', kind: 'living', areaM2: 60 },
+        { ref: 'kitchen', kind: 'kitchen', areaM2: 40 },
+        ...Array.from({ length: 8 }, (_, i) => ({ ref: `bed-${i}`, kind: 'bedroom' as const, areaM2: 20 })),
+      ),
+      plot(),
+      1,
+    );
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/would not fit/);
   });
 
   it('gives the same envelope across the storeys it is told about', () => {

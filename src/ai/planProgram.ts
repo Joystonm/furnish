@@ -112,9 +112,10 @@ export async function requestRoomProgram(brief: DesignBrief, signal?: AbortSigna
     };
   }
 
-  // A program that asks for more floor than the envelope holds is refused here
-  // for the same reason `reviewProgram` exists: the packer fills whatever box
-  // it is given, so an over-large program lays out rooms that overlap.
+  // A program that asks for far more floor than the envelope holds is refused
+  // here: `reviewProgram` draws the line at the same scale floor the packer
+  // uses, so a program that only just overshoots is scaled down rather than
+  // thrown away.
   const review = reviewProgram(parsed.program, brief.plot, brief.floorCount);
   if (!review.ok) {
     return { planned: false, unconfigured: false, reason: review.error ?? 'The room program did not fit the plot.' };

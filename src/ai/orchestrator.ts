@@ -163,10 +163,14 @@ export function systemPrompt(): string {
     '5. Never claim something is done unless the tool result for it succeeded. If a tool returns an error, say what failed and what you would do instead.',
     '6. If the request needs something destructive or ambiguous, say so in your reply and stop — do not plan the destructive part.',
     '7. If the user asks for the building to be built, designed, laid out, extended or changed in any way, you MUST call the tools. Writing the layout out in words — "living room at x=3, 4.5 by 4.0", "here is my plan" — changes nothing, because Furnish only redraws the plan from operations that actually ran. Prose belongs in "reply", alongside the tool steps that do the work, never instead of them.',
+    '8. To put furniture in a room, call add_furniture with the catalogue id and the room — for example {"catalogId":"sofa-3","room":"Living room"}. Furnish finds the clear spot itself: it knows the room, the furniture already in it, and where the doors swing. Leave x and y out. Never guess or work out a position for a piece of furniture — you cannot see the furniture, so any number you produce would be a fiction.',
+    '9. When a tool fails, read the hint and act on it. If the hint says which item DOES fit, place that one instead and tell the user plainly which item you placed and why the first one could not go. If the request cannot be met, say so and stop — never report an edit as done that did not happen.',
     '',
     'Respond with JSON only, matching this shape:',
     '{"intent":"one sentence","steps":[{"tool":"tool_name","input":{...},"why":"short reason"}],"reply":"what you will tell the user, in plain language"}',
-    'Use exactly one step of {"reply":"..."} on its own ONLY when the user asked a question and no change is wanted. Every request to change the building is answered with tool steps.',
+    'Every request to change the building is answered with tool steps.',
+    '',
+    'To finish the turn, send one step of {"reply":"what you will tell the user"} and call no tools. That is how you say you have finished — it does not mean you did nothing. Once your changes are applied and the checks are clean, finish with that step; do not keep calling tools to look.',
   ].join('\n');
 }
 
@@ -600,6 +604,8 @@ export async function runAssistantTurn(
   let pressedForTools = false;
   let reply = '';
   let intent = '';
+  // How many times this turn has been given another round after a failure.
+  let recoveries = 0;
 
   progress('Reading the project…');
   const after = () => measureAndCount();
@@ -646,15 +652,34 @@ export async function runAssistantTurn(
     // ── step 5: strict validation ──
     progress('Checking the plan…');
     const parsed = parsePlan(answer.text, answer.toolCalls);
+    let plan: Plan;
     if (!parsed.ok) {
-      progress('');
-      return emptyReport({ error: parsed.error });
+      // An empty plan is the model saying it has nothing left to do.
+      //
+      // Once something has already been applied in this turn, that is the end
+      // of the turn and not a failure: the work is done, the app has measured
+      // it, and the honest reply is what it did. It is only a refusal when
+      // nothing has been applied and the model has offered no operation at
+      // all — which is the case the shape check exists for.
+      //
+      // The empty plan falls through to the shared end-of-round logic below,
+      // which is where the app decides whether to press the model once for
+      // the operations it has not called yet, or to end the turn and say
+      // honestly what was done.
+      const emptyPlan = parsed.error === 'A plan needs at least one step.';
+      if (!emptyPlan || steps.length === 0) {
+        progress('');
+        return emptyReport({ error: parsed.error });
+      }
+      plan = { intent: intent || 'Assistant turn', steps: [], needsApproval: false };
+    } else {
+      intent = parsed.plan.intent;
+      plan = parsed.plan;
     }
-    intent = parsed.plan.intent;
 
     // ── step 6: preconditions ──
     progress('Checking the plan against the model…');
-    const problems = checkPreconditions(project, parsed.plan);
+    const problems = checkPreconditions(project, plan);
     if (problems.length) {
       progress('');
       const message = `The plan was not applied because it would not have worked:\n• ${problems.join('\n• ')}`;
@@ -665,8 +690,18 @@ export async function runAssistantTurn(
     // ── step 7: apply ──
     let ranAnything = false;
     let failed = false;
+    // A failed step does not always end the turn. When the plan had nothing
+    // else left to apply, the failure is a fact the model can answer — the
+    // app knows which items DO fit, and says so in the hint. One round is
+    // given to act on that, and only one: a loop that keeps retrying is a
+    // turn that never finishes.
+    let recover = false;
+    // Where this round's steps begin, so that the round can be told apart
+    // from the ones before it: a round that only read the plan is a round
+    // that changed nothing, whatever the earlier rounds did.
+    const roundStart = steps.length;
 
-    for (const [index, step] of parsed.plan.steps.entries()) {
+    for (const [index, step] of plan.steps.entries()) {
       if (!('tool' in step)) {
         reply = step.reply;
         continue;
@@ -675,7 +710,7 @@ export async function runAssistantTurn(
       const spec = TOOLS_BY_NAME.get(step.tool)!;
 
       if (spec.permission === 'destructive') {
-        const approved = options.approve ? await options.approve(step, parsed.plan) : false;
+        const approved = options.approve ? await options.approve(step, plan) : false;
         if (!approved) {
           steps.push({ index, tool: step.tool, label: spec.title, status: 'rejected', summary: 'Declined by you.' });
           store.log({ actor: 'user', label: `Declined ${spec.title.toLowerCase()}`, ok: true });
@@ -728,11 +763,34 @@ export async function runAssistantTurn(
         transcript.push({ role: 'user', content: `${step.tool} succeeded: ${outcome.summary}` });
       } else {
         failed = true;
-        transcript.push({ role: 'user', content: `${step.tool} failed: ${outcome.error}. ${outcome.hint ?? ''}` });
         // Stop the plan here. Continuing after a failed step would apply the
         // rest against a state the model did not expect.
+        //
+        // Unless there is nothing left in the plan that depends on it. Then
+        // the failure is the last thing that happened, and the model is given
+        // one more round to answer it — with the app's own facts in the hint,
+        // so the answer can be a placement rather than a refusal.
+        const rest = plan.steps.slice(index + 1).filter((s) => 'tool' in s);
+        if (rest.length === 0 && recoveries < 1 && iteration < maxIterations - 1) {
+          recoveries += 1;
+          recover = true;
+          transcript.push({
+            role: 'user',
+            content:
+              `${step.tool} failed: ${outcome.error}. ${outcome.hint ?? ''} ` +
+              'That was the last thing the plan tried to do. If the request can still be met, call a tool that will do it. If it cannot, reply and say plainly what could not be done and why.',
+          });
+        } else {
+          transcript.push({ role: 'user', content: `${step.tool} failed: ${outcome.error}. ${outcome.hint ?? ''}` });
+        }
         break;
       }
+    }
+
+    if (recover) {
+      // The turn continues: the model answers the failure in the next round.
+      progress('');
+      continue;
     }
 
     // ── step 8: recalculate ──
@@ -759,20 +817,27 @@ export async function runAssistantTurn(
             (issues.length
               ? `Issues: ${issues.slice(0, 10).map((i) => i.message).join(' ')}`
               : 'The plan is clean.') +
-            ' Fix anything outstanding, or give your final reply.',
+            ' Fix anything outstanding, or finish the turn with a "reply" step and no tools.',
         });
         continue;
       }
 
-      // The budget ran out while the model was still editing on a *later*
-      // round, which means it had not reached a stopping point of its own
-      // accord. Say so rather than letting "Done —" imply the whole request
-      // was finished. A first round that does everything is not a cut-off, so
-      // it is not flagged.
+      // The budget ran out before the model gave a final reply, which means it
+      // had not reached a stopping point of its own accord. Say so rather than
+      // letting "Done —" imply the whole request was finished. A first round
+      // that does everything is not a cut-off, so it is not flagged.
+      //
+      // What it was doing when the budget ran out is worth saying precisely:
+      // a model that was still editing is a different situation from one that
+      // had stopped editing and was reading the plan back, and the two are
+      // not the same news for the person who asked.
       progress('');
       const cutOff = iteration > 0;
+      const roundWrote = steps.slice(roundStart).some((s) => s.status === 'applied' && isWrite(s));
       const note = cutOff
-        ? `The assistant reached its step limit of ${maxIterations} rounds while still making changes. Everything it did apply is listed above, but some of what you asked for may not have been done.`
+        ? (roundWrote
+            ? `The assistant reached its step limit of ${maxIterations} rounds while still making changes. Everything it did apply is listed above, but some of what you asked for may not have been done.`
+            : `The assistant used all ${maxIterations} rounds without giving a final reply. Everything it did apply is listed above, but it may not have finished everything you asked for.`)
         : '';
       store.log({ actor: 'assistant', label: intent || 'Assistant turn', ok: true, opCount: steps.filter((s) => s.status === 'applied').length });
       return {
@@ -787,22 +852,32 @@ export async function runAssistantTurn(
 
     const cancelled = steps.some((s) => s.status === 'rejected') && !ranAnything;
     const appliedCount = steps.filter((s) => s.status === 'applied').length;
+    // Reading the plan is not changing it. The count that says whether this
+    // turn changed the drawing counts the operations that write, so a turn
+    // that only inspected and measured is never mistaken for one that moved a
+    // wall.
+    const writeCount = steps.filter((s) => s.status === 'applied' && isWrite(s)).length;
     // A design request answered in prose has changed nothing at all. Rather
     // than hand the panel a layout the app never drew, press once — firmly, and
     // naming the failure — for the tool calls. One press only: a model that
     // answers in prose twice is answering in prose, and a third round would
     // only spend money on the same sentence.
     //
+    // The same press is for a model that read the plan and then stopped. It
+    // looked, and looked, and never asked for the change.
+    //
     // It also needs a round left to spend. Pressing on the last iteration would
     // fall straight out of the loop and be reported as "reached the step limit",
     // which is a different and untrue thing to say.
-    if (iteration < maxIterations - 1 && !cancelled && !pressedForTools && appliedCount === 0 && isDesignRequest(request)) {
+    if (iteration < maxIterations - 1 && !cancelled && !pressedForTools && writeCount === 0 && isDesignRequest(request)) {
       pressedForTools = true;
       progress('Nothing was changed — asking for the operations…');
       transcript.push({
         role: 'user',
         content:
-          'Nothing has been changed: you described a design in words but called no tools, and Furnish only redraws the plan from operations that actually ran. ' +
+          (appliedCount
+            ? 'You have read the plan and measured it, but nothing on the drawing has changed: no operation that alters the design actually ran. '
+            : 'Nothing has been changed: you described a design in words but called no tools, and Furnish only redraws the plan from operations that actually ran. ') +
           'Call the tools now — one per room, wall, opening or item — and put your explanation in "reply" alongside them. ' +
           'If the request genuinely cannot be turned into operations, say which part and why.',
       });
@@ -811,16 +886,22 @@ export async function runAssistantTurn(
     }
 
     progress('');
-    const changedNothing = !cancelled && appliedCount === 0 && isDesignRequest(request);
+    const changedNothing = !cancelled && writeCount === 0 && isDesignRequest(request);
     store.log({
       actor: 'assistant',
       label: intent || 'Assistant turn',
       ok: true,
       opCount: appliedCount,
     });
+    // The model's own words come first, but the app's accounting comes too
+    // whenever there is something to account for. The model says what it
+    // thinks it did; the app says what it can prove it did, and the proof is
+    // the part the user is entitled to rely on.
+    const summary = defaultReply(steps, measurements);
+    const said = reply.trim();
     return {
       ok: true,
-      reply: reply || defaultReply(steps, measurements),
+      reply: said && writeCount > 0 ? `${said}\n\n${summary}` : said || summary,
       intent,
       steps,
       after: measurements,
@@ -854,6 +935,28 @@ async function nextFrame(ms: number): Promise<void> {
 /* ───────────────────────────────────────────────────────── step 10 ─────────── */
 
 /**
+ * Whether a step's operation changed the drawing.
+ *
+ * Three kinds of step are not a change. A step with no tool at all is the
+ * model talking, not the app acting. A step whose tool the app does not have
+ * could not have run. And a read tool — inspecting, measuring, listing —
+ * leaves the plan exactly as it was, and saying otherwise would be claiming a
+ * modification nobody made.
+ */
+function isWrite(step: StepReport): boolean {
+  if (!step.tool) return false;
+  const spec = TOOLS_BY_NAME.get(step.tool);
+  return spec ? spec.permission !== 'read' : false;
+}
+
+/** Whether a step only read the plan rather than changing it. */
+function isRead(step: StepReport): boolean {
+  if (!step.tool) return false;
+  const spec = TOOLS_BY_NAME.get(step.tool);
+  return spec ? spec.permission === 'read' : false;
+}
+
+/**
  * The reply shown when the model ran tools but said nothing itself.
  *
  * It is built from what actually succeeded and from numbers the app measured —
@@ -864,10 +967,36 @@ function defaultReply(steps: StepReport[], measurements: ReturnType<typeof measu
   const failed = steps.filter((s) => s.status === 'failed');
   const rejected = steps.filter((s) => s.status === 'rejected');
 
+  // Reading the plan is not changing it. An operation that only inspects or
+  // measures leaves the drawing exactly as it was, and a reply that calls that
+  // a "change" is claiming a modification nobody made — so the two are counted
+  // apart and said apart.
+  const writes = applied.filter(isWrite);
+  const reads = applied.filter(isRead);
+
   const lines: string[] = [];
-  if (applied.length) {
-    lines.push(`Done — ${applied.length} change${applied.length === 1 ? '' : 's'} applied:`);
-    for (const s of applied) lines.push(`· ${s.label}: ${s.summary ?? 'applied'}`);
+  if (writes.length) {
+    lines.push(`Done — ${writes.length} change${writes.length === 1 ? '' : 's'} applied:`);
+    for (const s of writes) lines.push(`· ${s.label}: ${s.summary ?? 'applied'}`);
+  }
+  if (reads.length) {
+    if (writes.length) {
+      // The same read twice is still one read. Listing it twice would make a
+      // single inspection look like the model did the work twice over.
+      const labels = [...new Set(reads.map((s) => s.label.toLowerCase()))];
+      lines.push(`Also read: ${labels.join(', ')}.`);
+    } else {
+      lines.push('Nothing on the drawing changed — I read the plan and measured it:');
+      const seen = new Set<string>();
+      for (const s of reads) {
+        if (seen.has(s.label)) continue;
+        seen.add(s.label);
+        lines.push(`· ${s.label}: ${s.summary ?? 'read'}`);
+      }
+    }
+  }
+  if (!writes.length && !reads.length && !failed.length && !rejected.length) {
+    lines.push('Nothing was changed.');
   }
   if (rejected.length) lines.push(`You declined ${rejected.length} destructive step${rejected.length === 1 ? '' : 's'}, so nothing was changed for ${rejected.length === 1 ? 'it' : 'those'}.`);
   if (failed.length) lines.push(`Stopped after ${failed[0].label} failed: ${failed[0].error}`);

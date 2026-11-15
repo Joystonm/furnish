@@ -12,6 +12,7 @@
  * empty. It says what happens next and puts one button in front of them.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { clearTurns } from '../ai/transcript.ts';
 import { deleteProject, listProjects, loadProject, type LibraryEntry } from '../persist/library.ts';
 import { navigate, STUDIO_PATH } from '../router.ts';
 import { useProject } from '../store/useProject.ts';
@@ -53,6 +54,9 @@ export function Projects() {
     // session restore deliberately stands aside, so this really is a blank
     // sheet rather than yesterday's house wearing a new name.
     useProject.getState().newProject();
+    // The transcript outlives the studio shell, so it has to be emptied by
+    // hand: the turns in the log are about a house that no longer exists.
+    clearTurns();
     navigate(STUDIO_PATH);
   }, []);
 

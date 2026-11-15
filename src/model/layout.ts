@@ -67,6 +67,38 @@ interface Weighted {
 }
 
 /**
+ * The narrowest a room may be, in metres, along either side.
+ *
+ * A room 0.66 m wide is a strip, not a room: there is no door to put in its
+ * short walls, and no way to stand in it. The packer used to make one whenever
+ * a small room asked for a small share of a band — the area split handed it a
+ * slice a few centimetres wide — and the room then had no way in at all.
+ *
+ * So the split is clamped: no room is cut thinner than this. The space comes
+ * out of the neighbour that was asking for more of the band than the band has,
+ * which is the only way a small room can be a room.
+ */
+const MIN_ROOM_SIDE = 1.2;
+
+/**
+ * Keep a split from cutting a room thinner than it can be used at.
+ *
+ * The area ratio is what the program asked for. When one room wants a very
+ * small share of a band, that share can be a slice too thin to stand in, so the
+ * ratio is pulled back to the narrowest room the packer will build. The band
+ * still fills exactly; the small room gets more than it asked for and its
+ * neighbour gets less.
+ */
+function clampSplit(ratio: number, span: number): number {
+  // A box too small to honour the rule is split as it was: there is no width
+  // to give back, and a room that cannot be made bigger is better than one
+  // that is not built at all.
+  if (span < 2 * MIN_ROOM_SIDE) return ratio;
+  const min = MIN_ROOM_SIDE / span;
+  return Math.min(Math.max(ratio, min), 1 - min);
+}
+
+/**
  * Fill `box` exactly with `items`, preserving their area proportions.
  *
  * Binary space partition: split the item list into two groups of roughly equal
@@ -103,7 +135,7 @@ function pack<T extends Weighted>(box: Box, items: T[]): Array<T & { box: Box }>
 
   // Split the box along its longer axis so children stay close to square.
   const horizontal = box.width >= box.depth;
-  const ratio = total > 0 ? leftArea / total : 0.5;
+  const ratio = clampSplit(total > 0 ? leftArea / total : 0.5, horizontal ? box.width : box.depth);
 
   const [a, b] = horizontal
     ? [
@@ -470,6 +502,19 @@ export interface GenerateReport {
   summary?: string;
 }
 
+/**
+ * What is left of the plot once the setbacks are taken off it.
+ *
+ * The setbacks can add up to more than the plot, and the old message printed
+ * the difference as "-4.00 m" — which reads like a bug rather than a refusal.
+ */
+function envelopeRefusal(envW: number, envD: number): string {
+  if (envW <= 0 || envD <= 0) {
+    return 'The setbacks leave nothing to build on — they need more room than the plot has.';
+  }
+  return `The setbacks leave only ${envW.toFixed(2)} m × ${envD.toFixed(2)} m to build on.`;
+}
+
 export function generateFromBrief(
   project: Project,
   brief: DesignBrief,
@@ -487,7 +532,7 @@ export function generateFromBrief(
     return {
       ok: false,
       code: 'conflict',
-      error: `The setbacks leave only ${envW.toFixed(2)} m × ${envD.toFixed(2)} m to build on — that is too small for a house.`,
+      error: `${envelopeRefusal(envW, envD)} That is too small for a house.`,
       hint: 'Reduce the setbacks or increase the plot size in the plot settings.',
     };
   }
@@ -1018,7 +1063,7 @@ export function gridFromBrief(
     return {
       ok: false,
       code: 'conflict',
-      error: `The setbacks leave only ${envW.toFixed(2)} m × ${envD.toFixed(2)} m to build on — not enough for a grid of rooms.`,
+      error: `${envelopeRefusal(envW, envD)} That is too small for a grid of rooms.`,
       hint: 'Reduce the setbacks on the Plot step, or start from an empty plot instead.',
     };
   }

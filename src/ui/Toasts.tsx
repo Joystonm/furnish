@@ -22,7 +22,15 @@ const LIFETIME = { info: 3200, success: 2600, warning: 11000, error: 7000 } as c
 export function Toasts() {
   const toasts = useProject((s) => s.toasts);
   return (
-    <div className="pointer-events-none fixed bottom-11 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2" data-testid="toasts">
+    // Above the onboarding scrim, which is `z-50` and covers the whole screen.
+    // A refusal is no use to anyone if the modal it was triggered from hides
+    // it — clicking "Generate the plan" on a plot too small to build on has to
+    // say so where the user is already looking.
+    //
+    // The rows themselves take no clicks: a toast must never swallow a click
+    // meant for the dialog underneath it. Only the dismiss button is
+    // clickable.
+    <div className="pointer-events-none fixed bottom-11 left-1/2 z-[60] flex -translate-x-1/2 flex-col items-center gap-2" data-testid="toasts">
       {toasts.map((t) => (
         <ToastRow key={t.id} id={t.id} kind={t.kind} message={t.message} />
       ))}
@@ -82,9 +90,9 @@ function ToastRow({ id, kind, message }: { id: string; kind: Toast['kind']; mess
     : 'border-line text-inkSoft';
 
   return (
-    <div className={`slide-up pointer-events-auto flex max-w-lg items-start gap-2.5 rounded-card border bg-surface/95 px-3.5 py-2.5 shadow-pop backdrop-blur-md ${tone}`}>
+    <div className={`slide-up pointer-events-none flex max-w-lg items-start gap-2.5 rounded-card border bg-surface/95 px-3.5 py-2.5 shadow-pop backdrop-blur-md ${tone}`}>
       <span className="min-w-0 flex-1 text-[13px] leading-snug">{message}</span>
-      <button className="-mr-1 mt-px shrink-0 rounded-control p-1 text-inkFaint transition-colors hover:bg-raised hover:text-ink" onClick={() => dismiss(id)} aria-label="Dismiss">
+      <button className="-mr-1 mt-px shrink-0 cursor-pointer pointer-events-auto rounded-control p-1 text-inkFaint transition-colors hover:bg-raised hover:text-ink" onClick={() => dismiss(id)} aria-label="Dismiss">
         <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden>
           <path d="M1 1l9 9M10 1l-9 9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
         </svg>
