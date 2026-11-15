@@ -147,7 +147,7 @@ that has not been made public yet.
 | Credentials for any login/paid service | ✅ none — no login, no paid service, no API key |
 | Recorded-run / backup-deployment fallback | ✅ twenty-three sealed evidence packs — one for each of the twenty runs in the ledger, plus three from runs that were made and not recorded — each with its own `run.yaml`, `result.yaml`, step records and screenshots; and the run's own `Result.md` under `.testmuai/tests/output-*/` for every flow |
 | TestMu AI account, same email for credit claim | ✅ the account used for the runs |
-| Repo pushed before 11:59 PM IST, 19 Nov | ✅ pushed — `Joystonm/furnish-verified`, `main`; five further commits are local only (see §5) |
+| Repo pushed before 11:59 PM IST, 19 Nov | ✅ pushed — `Joystonm/furnish-verified`, `main`; further commits are local only (see §5) |
 
 ### Where the repo stands
 
@@ -155,9 +155,9 @@ that has not been made public yet.
 The working copy lives in `F:\Argon` (the old `furnish-verified` folder was deleted and
 its work moved here, per your instruction), and `F:\Argon`'s `origin` still points at
 `Joystonm/Argon`, which was created 15 October and is therefore ineligible. The
-eligible repo's `main` is **five commits** behind the local `main` — `6f83563`,
-`11d904f`, `0572154`, `fb815f1` and the correction on top of it — so pushing it is a
-fast-forward and rewrites nothing.
+eligible repo's `main` is behind the local `main` — `53b9deb`, `6f83563`, `11d904f`,
+`0572154`, `fb815f1`, `cfde144` and whatever this document's own commit makes it —
+so pushing it is a fast-forward and rewrites nothing.
 
 ### The loops, in one table
 
@@ -194,9 +194,9 @@ Upload it to YouTube — unlisted is enough, public is better — and put the li
 `[repo link]` filled in. Two platforms is the minimum (Hacker News and Reddit for the
 technical one, X or LinkedIn for the short one).
 
-**3. Push the remaining commits.** The local `main` is five commits ahead of the
-eligible repo's `main`, and the working tree is clean — the assistant transcript store
-the recorded video shows working is one of those commits. From `F:\Argon`:
+**3. Push the remaining commits.** The local `main` is ahead of the eligible repo's
+`main`, and the working tree is clean — the assistant transcript store the recorded
+video shows working is one of those commits. From `F:\Argon`:
 
 ```bash
 git push https://github.com/Joystonm/furnish-verified.git main
