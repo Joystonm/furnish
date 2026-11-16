@@ -45,13 +45,13 @@ role" field.
 ## 2. The demo video
 
 **The file: `F:\demo-build\furnish-demo.mp4`** — 4 min 50 s, 1920×1080, H.264 + stereo
-AAC, 23 MB. Recorded from the running app as one continuous take, then cut, narrated in
+AAC, 25 MB. Recorded from the running app as one continuous take, then cut, narrated in
 English and assembled. Every number spoken is read out of the recording's own facts
 file, so the words cannot disagree with the picture.
 
 | Time | Shot | What is on screen |
 |---|---|---|
-| 0:00 | **Cold open — the app** | The landing page, then the studio: *"A floor plan is a claim about a building. This one comes with a receipt."* |
+| 0:00 | **Cold open — the app** | The landing page itself, held and pushed in slowly while the voice sets it up: *"A floor plan is a claim about a building. This one comes with a receipt."* |
 | 0:15 | **The studio** | The real app, running. Nothing in the video is a mock-up. |
 | 0:23 | **The brief** | The wizard: 18 × 20 m plot, two storeys, one living room, one kitchen, three bedrooms, two bathrooms, one dining room. No walls are drawn by hand. |
 | 0:37 | **Generate** | The model is asked one bounded question — which rooms, how big, which must adjoin. It never chooses a coordinate or an object id; the app mints those. |
@@ -69,7 +69,7 @@ file, so the words cannot disagree with the picture.
 | 3:55 | **The passing run** | The same audit, re-run, with the same test definition. Every assertion holds: the north point, the scale bar, the stair treads and its door, and every room drawn one the findings say can be reached. |
 | 4:12 | **The ledger** | Twenty runs. Ten passed, ten failed — the failing ones kept next to the passing ones, each with its commit, its cost and its evidence pack. One failing run is on screen with the reason it gave. |
 | 4:31 | **Export** | The model as JSON, the plan as vector or raster, a capture of the 3D view. |
-| 4:39 | **Close** | *"That is Furnish. A floor plan, and a receipt for it. The repository is public. Clone it, npm install, npm run dev."* |
+| 4:39 | **Close** | The landing page again, pulled back to the whole page: *"That is Furnish. A floor plan, and a receipt for it. The repository is public. Clone it, npm install, npm run dev."* |
 
 **Where Kane is on screen:** its own terminal for 43 s of the 4 min 50 s, the PRD it was
 given for 15 s, and the ledger — twenty of its runs with their commits, costs and
@@ -83,6 +83,15 @@ test definition and the verdicts are the point of those shots, not the port. The
 are played back through a pipe rather than a numbered file pattern: the pattern demuxer
 short-reads the staged folder and the scene freezes on one still frame, which is a
 trap worth keeping out of the next cut.
+
+**The take begins on a blank page.** The browser had painted nothing for the first five
+and a half seconds of the recording, so the opening and the closing scenes — both cut
+out of the head of the take — opened on five seconds of white and closed on four
+seconds of empty canvas. Rather than cut into a window that had not opened yet, the
+opening and the closing are now the landing page as a moving title card: pushed in
+over the cold open, pulled back over the close. The scene lengths are unchanged, so
+the timeline in the table above is still the timeline of the file. A full-frame
+brightness scan of the finished video finds no flat stretch anywhere in it.
 
 ---
 
@@ -187,7 +196,7 @@ labelled as that — it is not a defect in the product.
 
 Two things need your account. Neither can be done from here.
 
-**1. Upload the video.** The file is `F:\demo-build\furnish-demo.mp4` (4:50, 23 MB).
+**1. Upload the video.** The file is `F:\demo-build\furnish-demo.mp4` (4:50, 25 MB).
 Upload it to YouTube — unlisted is enough, public is better — and put the link in
 `README.md` under the demo heading, and in the two posts in §3. Suggested title:
 *"Furnish Verified — a floor plan, and a receipt for it"*.
