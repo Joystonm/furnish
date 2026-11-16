@@ -374,7 +374,6 @@ now land on the landing page and fail on a missing testid.
 
 | File | What it is |
 |---|---|
-| [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) | what Alza and ArchMorph do, and what Furnish took from them |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | how Furnish is built and why |
 | [FEATURE_MATRIX.md](FEATURE_MATRIX.md) | what is done, what is verified, and what is not |
 | [PRD.md](PRD.md) | the requirements, written so that a browser can either confirm them or contradict them — this is what Kane was given |
