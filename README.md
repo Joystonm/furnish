@@ -9,6 +9,15 @@ Furnish is not a viewer. Every room, wall, opening and piece of furniture is
 project data, editable by hand or by the assistant, in one canonical model
 that both the 2D plan and the 3D building are derived from.
 
+An app that checks itself does not prove much, so something else checks it.
+**Kane CLI**, an independent browser agent, was given the requirements in
+[`PRD.md`](PRD.md), designed its own test from them, ran it against the running
+app and **failed** — nine errors, three rooms that could not be walked to. The
+findings went back into the generator, the same test was re-run and passed, and
+the app keeps the whole verification history — every run, passing and failing —
+on a **Ledger** tab, because a record that holds only the passes is a
+certificate, not a record.
+
 > **Scope.** Furnish produces early-design geometry. Generated plans are **not**
 > construction-ready and are not professionally certified. Constraint
 > thresholds are configurable sanity bounds, **not** rules from any
@@ -25,6 +34,15 @@ The app end to end — brief, plan, the assistant refusing a sofa that does not 
 placing the one that does, the building in 3D, the checks — and then the Kane CLI runs
 that hold it to account: the audit that failed, the same audit re-run and passing, and
 the Ledger tab that keeps both with their commits, their costs and their evidence.
+
+The Kane footage is not a mock-up and the video is not a scripted animation. It was
+cut from one recorded take of the running app, with three things woven in: the
+**PRD** that Kane was given, the **terminal recordings** of the two runs — the audit
+that failed and the same audit, with the same test definition, re-run and passing,
+captured as they streamed — and the **Ledger** tab in the app holding both. The
+voice-over is synthesised, and every number it speaks is read out of the recording's
+own facts file, so the words cannot disagree with the picture. Roughly a quarter of
+the runtime is Kane and its evidence; the rest is the app the agent held to account.
 
 ---
 
@@ -59,6 +77,12 @@ plan** button opens — so it cannot drift from the product.
 
 Without a key the studio is fully usable for manual editing; only the assistant
 is disabled, and the UI says so rather than failing silently.
+
+One thing in this README needs the network and an account: the Kane CLI ledger.
+`node scripts/verify.mjs` needs `kane-cli` signed in with credits on the account.
+The recorded runs ship in `public/runs.json` with their sealed evidence in
+`.testmuai/evidence/`, so the **Ledger** tab has its history the moment you start
+the app — see **Verifying it works**.
 
 To run it the way it is meant to be run — as a production build behind the
 Express server, which is what serves the MiniMax API:
@@ -136,6 +160,52 @@ The sixty-five are:
 | `doorSwing.spec.ts` (1) | a door's leaf swinging the right way |
 | `pointer-lock.spec.ts` (1) | a regression test for an unhandled rejection that came from a third-party control and only appeared in roughly one run in three |
 
+Everything above is the app marking its own homework. The check worth something is
+the one allowed to disagree, and that is what Kane CLI is for.
+
+**The acceptance criteria, handed to the agent.** `flows/*.md` are seven criteria
+taken from `PRD.md` and written as the objective a browser agent is asked to carry
+out — in the words a person would use, with the steps it has to take and the
+assertions it has to end on. `node scripts/verify.mjs` reads them, substitutes
+`{{APP_URL}}` with the running app's address, and hands each one to `kane-cli run`.
+Every run — passing or failing — is written to `public/runs.json`, which the app's
+**Ledger** tab reads and shows next to the plan it just drew. The agent is also
+given `.testmuai/context.md`, a description of the app as it actually is — the
+**Checks** tab, the **Project navigator**, the three routes — so it is not sent
+looking for things that have moved.
+
+| The ledger | |
+|---|---|
+| Runs | **20** — 10 passed, 10 failed |
+| Failures | kept, on purpose; a ledger holding only the passes is a certificate, not a record |
+| Evidence | **23 sealed packs** in `.testmuai/evidence/` — one for each of the twenty runs, plus three from runs that were made and not recorded |
+| Every row carries | its commit, its cost, its duration, and the findings the agent gave |
+| The app's own numbers | computed by the app's own code at the commit in question, and stored in `measurements/<commit>.json` |
+
+**The first audit is the one to read.** Kane designed it from the PRD, ran it
+against the app, and it came back with **nine errors**: two rooms with nowhere to
+go, three rooms that could not be walked to from the front door, the staircase with
+no door, and three pieces of furniture standing in doorways. Those findings went
+back into the generator — the doors are grown as a tree from the corridor so no
+room is a passage to another, the staircase is taken out of the footprint before
+the rooms are partitioned, the furniture is placed last, clear of every doorway —
+and **the same test, with the same definition hash, was re-run and passed**. Six
+more loops were closed the same way after that: a front door nobody could see on
+the drawing, a door the staircase painted over, a flight arriving upstairs drawn
+as an empty hole, a refusal that gave the plot in metres instead of the two areas
+and the gap between them, and the ledger's own completeness. Each one found by the
+agent, fixed in the product, re-run until it passed with the same test. The table
+of them is in [`SUBMISSION.md`](SUBMISSION.md).
+
+> **Where this stands, honestly.** The Kane CLI credit balance on this account is
+> **−4.8781**, so no further run can be made until credits are bought — the flows
+> cannot be re-run against the current build today. The twenty runs in the ledger
+> are real, sealed and on disk, and the two terminal recordings in the demo video
+> are among them. The recorded runs were made against the build of the day; the
+> acceptance criteria have since been re-worded to match the app as it now stands
+> (see [`flows/README.md`](flows/README.md)) — the criteria themselves did not
+> change.
+
 ---
 
 ## Demo script
@@ -192,7 +262,9 @@ over another room, and the engine says so, names both rooms, and quantifies it:
 
 Nine other findings appear too — disconnected floors, a room with no door,
 furniture in a door swing, setback crossings. Each is computed from the model,
-not asserted by the model.
+not asserted by the model. The same class of finding is what the Kane CLI audit
+turned up against an earlier build — nine of them — and it is what the Ledger
+tab keeps.
 
 **10 · Correct it.** Press **Shrink Kitchen to 6.10 m wide**. The overlap
 clears, the room count is unchanged (it shrank, it did not delete), and the
@@ -209,6 +281,10 @@ app's own importer. **Export → SVG**: a complete document with real geometry i
 millimetres. **Export → PNG**, and a **3D capture** taken from the live canvas.
 
 Then the thirteenth check runs: no uncaught errors anywhere in the run.
+
+Each of these criteria is also written out in `flows/` as an objective for an
+independent browser agent, so the same twelve steps can be checked by something
+that is allowed to disagree with the app — see **Verifying it works**.
 
 ---
 
@@ -240,6 +316,11 @@ Full detail in [ARCHITECTURE.md](ARCHITECTURE.md).
 - **Checks are deterministic.** 23 emitted issue codes with stable names, the
   numbers behind them, and — where one can be computed — a correction you can
   click.
+- **The verification history is part of the product.** The Ledger tab is not a
+  report about the app; it is a tab in it. Every Kane CLI run against this
+  codebase is there — passing and failing, each with its commit, its cost and
+  its sealed evidence pack — and the findings the agent gave are shown next to
+  the plan they were found in.
 
 ---
 
@@ -263,7 +344,13 @@ src/
 server/       Express: /api/chat, /api/health, MiniMax client, .env loader
 e2e/          the twelve-step demonstration, the pointer-lock regression, the
               editing and assistant gesture suites, the scripted model stand-in
-scripts/      live-assistant-check.mjs — drives the real service once
+flows/        seven acceptance criteria, written to be handed to Kane CLI
+scripts/      verify.mjs — runs the flows through kane-cli and writes the ledger
+              measure.mjs — the app's own checker, at a given commit
+              live-assistant-check.mjs — drives the real service once
+public/runs.json   the ledger the Ledger tab reads: every run, passing or failing
+measurements/     what the app's checker said at each commit
+.testmuai/    Kane CLI's context memory, the sealed evidence packs, the results
 ```
 
 Every `e2e/*.spec.ts` navigates to **`/studio`**, not `/`. A `goto('/')` would
@@ -276,6 +363,9 @@ now land on the landing page and fail on a missing testid.
 | [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) | what Alza and ArchMorph do, and what Furnish took from them |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | how Furnish is built and why |
 | [FEATURE_MATRIX.md](FEATURE_MATRIX.md) | what is done, what is verified, and what is not |
+| [PRD.md](PRD.md) | the requirements, written so that a browser can either confirm them or contradict them — this is what Kane was given |
+| [flows/README.md](flows/README.md) | the acceptance criteria as they were handed to the agent, and why two of them now say "says" rather than "refuses" |
+| [SUBMISSION.md](SUBMISSION.md) | the hackathon entry: the one paragraph, the shot list of the demo, and the table of every loop that was closed |
 
 `_research/alza` and `_research/archmorph` are third-party checkouts made while
 studying those projects. They are under their own licences, they are not part
