@@ -18,6 +18,10 @@ the app keeps the whole verification history — every run, passing and failing 
 on a **Ledger** tab, because a record that holds only the passes is a
 certificate, not a record.
 
+The demo video was made with Kane CLI, out of those runs: the terminal, the
+failed audit, the re-run, the ledger — and the app in it, in the shape Kane's
+failures forced.
+
 > **Scope.** Furnish produces early-design geometry. Generated plans are **not**
 > construction-ready and are not professionally certified. Constraint
 > thresholds are configurable sanity bounds, **not** rules from any
@@ -30,19 +34,29 @@ certificate, not a record.
 ▶ **[Furnish Verified — a floor plan, and a receipt for it](<YOUTUBE-LINK>)** —
 4 min 50 s.
 
+**The demo video was made with Kane CLI.** Three of its shots are Kane's own
+work: **its terminal**, running the audit it designed from the PRD and failing
+with nine errors; **the same audit, the same test definition, re-run and
+passing**; and **the Ledger tab** in the app, holding both with their commits,
+their costs and their sealed evidence. The fourth is the PRD it was handed.
+
 The app end to end — brief, plan, the assistant refusing a sofa that does not fit and
 placing the one that does, the building in 3D, the checks — and then the Kane CLI runs
 that hold it to account: the audit that failed, the same audit re-run and passing, and
 the Ledger tab that keeps both with their commits, their costs and their evidence.
 
-The Kane footage is not a mock-up and the video is not a scripted animation. It was
-cut from one recorded take of the running app, with three things woven in: the
-**PRD** that Kane was given, the **terminal recordings** of the two runs — the audit
-that failed and the same audit, with the same test definition, re-run and passing,
-captured as they streamed — and the **Ledger** tab in the app holding both. The
-voice-over is synthesised, and every number it speaks is read out of the recording's
-own facts file, so the words cannot disagree with the picture. Roughly a quarter of
-the runtime is Kane and its evidence; the rest is the app the agent held to account.
+And the app it audits is the app as its findings left it. The doors are grown as
+a tree from the corridor so no room is a passage to another, the staircase is
+lifted out of the footprint before the rooms are partitioned, the furniture is
+placed last, clear of every doorway — three repairs that exist only because Kane
+failed first, and the nine errors went straight back into the generator.
+
+Nothing in it is a mock-up. The video was cut from one recorded take of the
+running app, with Kane's terminal recordings, the PRD and the Ledger tab woven
+in; the voice-over is synthesised, and every number it speaks is read out of the
+recording's own facts file, so the words cannot disagree with the picture.
+Roughly a quarter of the runtime is Kane and its evidence; the rest is the app
+the agent held to account.
 
 ---
 
